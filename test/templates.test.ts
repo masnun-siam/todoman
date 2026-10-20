@@ -9,7 +9,8 @@ describe.each(['process.yml', 'summary.yml'])('%s', (f) => {
   const wf = load(f);
   it('has least-privilege permissions and a non-cancelling concurrency group', () => {
     expect(wf.permissions).toEqual({ issues: 'write', contents: 'read' });
-    expect(wf.concurrency['cancel-in-progress']).toBe(false);
+    const c = wf.concurrency ?? Object.values<{ concurrency?: { 'cancel-in-progress': boolean } }>(wf.jobs)[0].concurrency;
+    expect(c?.['cancel-in-progress']).toBe(false);
   });
   it('never interpolates event data into a shell script', () => {
     for (const job of Object.values<{ steps: { run?: string }[] }>(wf.jobs)) {
@@ -23,15 +24,20 @@ describe('process.yml', () => {
   const job = wf.jobs.process;
   it('triggers on issues opened and issue_comment created', () => {
     expect(wf.on).toEqual({ issues: { types: ['opened'] }, issue_comment: { types: ['created'] } });
-    expect(wf.concurrency.group).toBe('todoman-${{ github.event.issue.number }}');
+    expect(wf.concurrency).toBeUndefined(); // job-level, so skipped runs never join the group
+    expect(job.concurrency.group).toBe('todoman-${{ github.event.issue.number }}');
   });
   it('gates on the owner, labels and issue state per the PRD', () => {
     const c: string = job.if;
     expect(c).toContain("github.event.issue.user.login == (vars.TODOMAN_OWNER || 'masnun-siam')");
     expect(c).toContain("github.event.comment.user.login == (vars.TODOMAN_OWNER || 'masnun-siam')");
     expect(c).toContain("github.event.issue.state == 'open'");
-    for (const l of ['needs-info', 'failed', 'todoman:processing']) expect(c).toContain(`contains(github.event.issue.labels.*.name, '${l}')`);
-    for (const l of ['task', 'meeting', 'tracking', 'summary', 'processed']) expect(c).toContain(`!contains(github.event.issue.labels.*.name, '${l}')`);
+    const [issues, comment] = c.split("|| (github.event_name == 'issue_comment'");
+    const all = ['task', 'meeting', 'tracking', 'summary', 'todoman:processing', 'processed', 'needs-info', 'failed'];
+    for (const l of all) expect(issues).toContain(`!contains(github.event.issue.labels.*.name, '${l}')`);
+    for (const l of ['needs-info', 'failed', 'todoman:processing']) {
+      expect(comment).toMatch(new RegExp(`(?<!!)contains\\(github\\.event\\.issue\\.labels\\.\\*\\.name, '${l}'\\)`));
+    }
   });
   it('runs the action in process mode and ends with a failure/cancel step', () => {
     expect(job.steps[0]).toMatchObject({ uses: 'masnun-siam/todoman@v1', with: { mode: 'process' } });
