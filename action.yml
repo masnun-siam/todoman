@@ -1,0 +1,9 @@
+name: Todoman
+description: AI-processed personal todo dump to GitHub issues
+inputs:
+  mode:
+    description: process | summary | doctor
+    required: true
+runs:
+  using: node24
+  main: dist/index.js
