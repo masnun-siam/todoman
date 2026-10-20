@@ -4,4 +4,4 @@ Flags are env vars (`FEATURE_<SLUG>`), default off. A release moves the `v1` tag
 
 | Flag | PRD | Epic | Default | Status |
 |---|---|---|---|---|
-| `FEATURE_DUMP_TO_ISSUES` | `docs/prds/dump-to-issues.md` | #EPIC | off | off |
+| `FEATURE_DUMP_TO_ISSUES` | `docs/prds/dump-to-issues.md` | #1 | off | off |
