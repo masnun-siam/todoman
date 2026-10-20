@@ -1,4 +1,7 @@
 import * as core from '@actions/core';
+import { loadConfig, type Env } from './config.js';
+import { eventActor, isOwner } from './gate.js';
+import { maskSecrets } from './secrets.js';
 
 export const MODES = ['process', 'summary', 'doctor'] as const;
 export type Mode = (typeof MODES)[number];
@@ -9,9 +12,19 @@ const handlers: Record<Mode, () => Promise<void> | void> = {
   doctor: () => core.info('mode: doctor'),
 };
 
-export async function run(mode: string): Promise<void> {
+export async function run(mode: string, env: Env = process.env): Promise<void> {
   if (!(MODES as readonly string[]).includes(mode)) {
     throw new Error(`unknown mode: ${mode}`);
   }
+  const cfg = loadConfig(env);
+  if (mode !== 'doctor' && !cfg.enabled) {
+    core.info('Todoman disabled');
+    return;
+  }
+  if (mode === 'process' && !isOwner(eventActor(env), cfg.owner)) {
+    core.info('Ignoring event from a non-owner');
+    return;
+  }
+  maskSecrets(env, core.setSecret);
   await handlers[mode as Mode]();
 }

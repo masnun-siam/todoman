@@ -19584,6 +19584,9 @@ var ExitCode;
   ExitCode2[ExitCode2["Success"] = 0] = "Success";
   ExitCode2[ExitCode2["Failure"] = 1] = "Failure";
 })(ExitCode || (ExitCode = {}));
+function setSecret(secret) {
+  issueCommand("add-mask", {}, secret);
+}
 function getInput(name, options) {
   const val = process.env[`INPUT_${name.replace(/ /g, "_").toUpperCase()}`] || "";
   if (options && options.required && !val) {
@@ -19605,6 +19608,42 @@ function info(message) {
   process.stdout.write(message + os3.EOL);
 }
 
+// src/config.ts
+function loadConfig(env) {
+  return {
+    tz: env.TODOMAN_TZ || "Asia/Dhaka",
+    owner: env.TODOMAN_OWNER || "masnun-siam",
+    enabled: env.FEATURE_DUMP_TO_ISSUES === "true"
+    // exactly 'true'; 'TRUE', empty, unset = off
+  };
+}
+
+// src/gate.ts
+import { readFileSync } from "node:fs";
+function eventActor(env) {
+  if (!env.GITHUB_EVENT_PATH) return void 0;
+  const payload = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, "utf8"));
+  return payload.sender?.login;
+}
+function isOwner(actor, owner) {
+  return actor === owner;
+}
+
+// src/secrets.ts
+var NAMES = ["CLAUDE_CODE_OAUTH_TOKEN", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"];
+function maskSecrets(env, setSecret2) {
+  for (const n of NAMES) if (env[n]) setSecret2(env[n]);
+  if (env.GH_READ_TOKENS) {
+    setSecret2(env.GH_READ_TOKENS);
+    try {
+      for (const t of Object.values(JSON.parse(env.GH_READ_TOKENS))) {
+        if (typeof t === "string" && t) setSecret2(t);
+      }
+    } catch {
+    }
+  }
+}
+
 // src/main.ts
 var MODES = ["process", "summary", "doctor"];
 var handlers = {
@@ -19612,15 +19651,28 @@ var handlers = {
   summary: () => info("mode: summary"),
   doctor: () => info("mode: doctor")
 };
-async function run(mode) {
+async function run(mode, env = process.env) {
   if (!MODES.includes(mode)) {
     throw new Error(`unknown mode: ${mode}`);
   }
+  const cfg = loadConfig(env);
+  if (mode !== "doctor" && !cfg.enabled) {
+    info("Todoman disabled");
+    return;
+  }
+  if (mode === "process" && !isOwner(eventActor(env), cfg.owner)) {
+    info("Ignoring event from a non-owner");
+    return;
+  }
+  maskSecrets(env, setSecret);
   await handlers[mode]();
 }
 
 // src/index.ts
-run(getInput("mode", { required: true })).catch((e) => setFailed(e instanceof Error ? e.message : String(e)));
+async function main() {
+  await run(getInput("mode", { required: true }));
+}
+main().catch((e) => setFailed(e instanceof Error ? e.message : String(e)));
 /*! Bundled license information:
 
 undici/lib/web/fetch/body.js:
