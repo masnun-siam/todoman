@@ -18,3 +18,5 @@ jobs:
       - run: npm test
       - run: npm run build
       - run: git diff --exit-code dist
+      - name: Pinned Claude CLI honours --tools ""
+        run: node scripts/check-claude-tools.mjs
