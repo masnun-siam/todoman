@@ -1,0 +1,45 @@
+name: Todoman summary
+on:
+  schedule:
+    - cron: '0 12 * * 4'
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: summary or doctor
+        type: choice
+        options: [summary, doctor]
+        default: summary
+      from:
+        description: Start date (summary only, optional)
+        required: false
+      to:
+        description: End date (summary only, optional)
+        required: false
+
+permissions:
+  issues: write
+  contents: read
+
+concurrency:
+  group: todoman-${{ inputs.mode || 'summary' }}
+  cancel-in-progress: false
+
+env:
+  FEATURE_DUMP_TO_ISSUES: ${{ vars.FEATURE_DUMP_TO_ISSUES }}
+  TODOMAN_OWNER: ${{ vars.TODOMAN_OWNER }}
+  TODOMAN_TZ: ${{ vars.TODOMAN_TZ }}
+  CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+  GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+  GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+  GOOGLE_REFRESH_TOKEN: ${{ secrets.GOOGLE_REFRESH_TOKEN }}
+  GH_READ_TOKENS: ${{ secrets.GH_READ_TOKENS }}
+  GITHUB_TOKEN: ${{ github.token }}
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: masnun-siam/todoman@v1
+        with:
+          mode: ${{ inputs.mode || 'summary' }}

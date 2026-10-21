@@ -4,6 +4,10 @@ inputs:
   mode:
     description: process | summary | doctor
     required: true
+  on-failure:
+    description: "'true' on the workflow's failure/cancel step: mark the dump failed"
+    required: false
+    default: 'false'
 runs:
   using: node24
   main: dist/index.js

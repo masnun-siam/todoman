@@ -1,0 +1,7 @@
+# Who can be invited to meetings. Aliases are matched case-insensitively.
+- name: Example Person
+  aliases: [Example, EP]
+  email: example.person@example.com
+- name: Another Person
+  aliases: [Another]
+  email: another.person@example.com
