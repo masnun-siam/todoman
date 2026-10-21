@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { run } from '../src/main.js';
 
 vi.mock('@actions/core');
+vi.mock('../src/github.js', () => ({ createGh: () => ({}) }));
+vi.mock('../src/doctor.js', () => ({ runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
 function event(login: string): string {
   const p = join(tmpdir(), `todoman-event-${login}.json`);
