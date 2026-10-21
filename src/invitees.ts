@@ -31,5 +31,5 @@ export function resolveInvitees(attendees: string[], people: Person[], text: str
     else if (invited.length >= MAX_INVITEES) skipped.push(`${name} — over the limit of ${MAX_INVITEES} invitees, invite manually`);
     else invited.push(person);
   }
-  return { invited, skipped };
+  return { invited, skipped: [...new Set(skipped)] };
 }

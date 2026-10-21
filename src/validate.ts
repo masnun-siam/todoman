@@ -45,7 +45,9 @@ function task(raw: Raw, ctx: ValidateContext): ValidItem | string {
   const title = checkTitle(raw);
   if (typeof title !== 'string') return title.fail;
   if (raw.due !== undefined && !isDate(raw.due)) return 'What is the due date (YYYY-MM-DD)?';
-  const labels = (names(raw.labels) ?? []).filter((l) => ctx.labels.includes(l) && !TODOMAN_LABELS.has(l) && !l.startsWith('repo:') && !l.startsWith('todoman:'));
+  const labels = (names(raw.labels) ?? [])
+    .map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())) // GitHub labels are case-insensitive; keep the repo's spelling
+    .filter((l): l is string => !!l && !TODOMAN_LABELS.has(l) && !l.startsWith('repo:') && !l.startsWith('todoman:'));
   return { type: 'task', title, body: text(raw.body), labels, ...(raw.due ? { due: raw.due as string } : {}) };
 }
 
@@ -74,7 +76,9 @@ function tracking(raw: Raw, ctx: ValidateContext): ValidItem | string {
   const ref = typeof raw.ref === 'string' ? raw.ref.trim() : '';
   if (!REF.test(ref)) return 'Which issue or pull request (owner/repo#n) should be tracked?';
   const [path, n] = ref.split('#');
-  const named = ctx.text.toLowerCase().includes(ref.toLowerCase()) || new RegExp(`github\\.com/${path.replace(/[.]/g, '\\.')}/(issues|pull)/${n}\\b`, 'i').test(ctx.text);
+  const esc = (x: string): string => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const lead = '(?<![\\w.-])'; // a longer owner or host in front must not match
+  const named = new RegExp(`${lead}${esc(path)}#${n}(?!\\d)|${lead}github\\.com/${esc(path)}/(issues|pull)/${n}(?!\\d)`, 'i').test(ctx.text);
   if (!named) return `Which issue or pull request is ${ref}? It is not mentioned in your text.`;
   const note = text(raw.note);
   if (!note) return `What should the note on ${ref} say?`;

@@ -31,4 +31,7 @@ describe('resolveInvitees', () => {
     expect(r.invited).toHaveLength(MAX_INVITEES);
     expect(r.skipped).toHaveLength(2);
   });
+  it('lists an unknown name once', () => {
+    expect(resolveInvitees(['bob', 'bob'], [], 'bob').skipped).toHaveLength(1);
+  });
 });

@@ -66,6 +66,17 @@ describe('validate', () => {
     const c = { ...ctx, text: 'check https://github.com/a/b/pull/7' };
     expect(one({ type: 'tracking', ref: 'a/b#7', note: 'n' }, c).items).toHaveLength(1);
   });
+  it('does not accept a ref that is only part of a longer ref or host', () => {
+    const t = (text: string, ref: string) => one({ type: 'tracking', ref, note: 'n' }, { ...ctx, text }).items;
+    expect(t('see masnun-siam/todoman#12', 'siam/todoman#1')).toHaveLength(0);
+    expect(t('see masnun-siam/todoman#1', 'siam/todoman#1')).toHaveLength(0);
+    expect(t('https://notgithub.com/a/b/issues/1', 'a/b#1')).toHaveLength(0);
+    expect(t('see a/b#1.', 'a/b#1')).toHaveLength(1);
+  });
+  it('matches labels case-insensitively and returns the repo spelling', () => {
+    const r = one({ type: 'task', title: 'a', labels: ['finance'] }, { ...ctx, labels: ['Finance'] });
+    expect(r.items[0]).toMatchObject({ labels: ['Finance'] });
+  });
   it('rejects a second meeting at the same instant', () => {
     const r = validate({ items: [meeting, { ...meeting, title: 'other', start: '2026-10-26T05:00:00Z' }], questions: [] }, ctx);
     expect(r.items).toHaveLength(1);
