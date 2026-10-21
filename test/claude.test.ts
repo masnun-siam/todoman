@@ -7,7 +7,7 @@ import { DATA_NOTICE } from '../src/prompts.js';
 
 const req = { model: 'sonnet', system: 'Parse.', schema: { type: 'object' }, input: 'dump text' };
 
-/** A stub `claude` that logs each call and answers with the next mode: ok | garbage | exit | hang. */
+/** A stub `claude` that logs each call and answers with the next mode: ok | big | garbage | exit | hang. */
 function stub(modes: string[]) {
   const dir = mkdtempSync(join(tmpdir(), 'stub-'));
   const log = join(dir, 'log.jsonl');
@@ -25,6 +25,7 @@ process.stdin.on('end', () => {
   const m = modes[Math.min(n, modes.length - 1)];
   if (m === 'hang') setInterval(() => {}, 1000);
   else if (m === 'exit') { console.error('SECRET-IN-STDERR'); process.exit(3); }
+  else if (m === 'big') process.stdout.write(JSON.stringify({ structured_output: { t: 'আ'.repeat(100000) } }));
   else if (m === 'garbage') console.log('not json');
   else console.log(JSON.stringify({ type: 'result', is_error: false, structured_output: { ok: true } }));
 });
@@ -60,6 +61,10 @@ describe('runClaude', () => {
     expect(c.cwd).toContain('todoman-claude-');
     expect(c.entries).toEqual([]);
     expect(c.stdin).toBe('dump text');
+  });
+  it('keeps multi-byte characters intact in large output', async () => {
+    const s = stub(['big']);
+    await expect(runClaude(req, { token: 't', bin: s.bin })).resolves.toEqual({ t: 'আ'.repeat(100000) });
   });
   it('retries invalid output once, then succeeds', async () => {
     const s = stub(['garbage', 'ok']);

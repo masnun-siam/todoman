@@ -52,6 +52,7 @@ function once(bin: string, r: ClaudeRequest, token: string, timeoutMs: number): 
       timedOut = true;
       child.kill('SIGKILL');
     }, timeoutMs);
+    child.stdout.setEncoding('utf8'); // keeps multi-byte characters intact across chunks
     child.stdout.on('data', (c) => (out += c));
     child.on('error', () => reject(new ClaudeError('failed')));
     child.on('close', (code) => {
