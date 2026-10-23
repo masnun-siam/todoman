@@ -6,6 +6,7 @@ import { parsePeople, type Person } from './invitees.js';
 import { nextKey } from './keys.js';
 import { LABELS } from './labels.js';
 import { BOT } from './markers.js';
+import { isCreated } from './match.js';
 import { MODELS, PARSE_SYSTEM } from './prompts.js';
 import { endState, resultComment, type ItemResult } from './result.js';
 import { PARSER_SCHEMA } from './schema.js';
@@ -65,7 +66,7 @@ export async function processDump(p: ProcessDeps): Promise<void> {
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
 
   const results: ItemResult[] = [];
-  for (const item of items) {
+  for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
     markers.push({ repo: p.repo, dump: p.issue, key });
     const title = 'title' in item ? item.title : item.type === 'tracking' ? item.ref : `${item.from} – ${item.to}`;

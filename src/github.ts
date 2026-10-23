@@ -40,6 +40,7 @@ export interface ProcessGh extends Pick<Gh, 'labelNames' | 'fileText'> {
   removeLabel(n: number, label: string): Promise<void>;
   comment(n: number, body: string): Promise<void>;
   closeCompleted(n: number): Promise<void>;
+  createIssue(i: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<Issue>;
 }
 
 type RawIssue = {
@@ -120,6 +121,9 @@ export function createGh(env: Env): Gh & ProcessGh {
     },
     async closeCompleted(n) {
       await api.issues.update({ owner, repo, issue_number: n, state: 'closed', state_reason: 'completed' });
+    },
+    async createIssue(i) {
+      return toIssue((await api.issues.create({ owner, repo, ...i })).data);
     },
   };
 }
