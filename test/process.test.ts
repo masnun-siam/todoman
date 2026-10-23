@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { shouldProcess, type Dump } from '../src/dump.js';
 import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
 import type { ItemHandler } from '../src/handlers.js';
+import { taskHandler } from '../src/handlers/task.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
 import { processDump } from '../src/process.js';
 import { endState } from '../src/result.js';
@@ -19,17 +20,25 @@ const comment = (id: number, author: string, body = 'reply'): IssueComment => ({
 /** In-memory data repo; records every write. */
 function fakeGh(issue: Issue, comments: IssueComment[] = [], extra: { since?: Date; issues?: Issue[] } = {}) {
   const writes: string[] = [];
+  const issues = extra.issues ?? [];
   const gh: ProcessGh = {
     labelNames: async () => ['area:home', 'task', 'processed'],
     fileText: async () => '- name: Asif\n  aliases: [asif]\n  email: asif@example.com\n',
     getIssue: async () => structuredClone(issue),
     listComments: async () => comments,
     labeledAt: async () => extra.since ?? null,
-    issuesSince: async () => extra.issues ?? [],
+    issuesSince: async () => issues,
     addLabel: async (n, l) => void writes.push(`+${l}#${n}`),
     removeLabel: async (n, l) => void writes.push(`-${l}#${n}`),
     comment: async (n, b) => void writes.push(`comment#${n}:${b}`),
     closeCompleted: async (n) => void writes.push(`close#${n}`),
+    createIssue: async ({ title, body, labels }) => {
+      const n = 100 + issues.length;
+      const made = dumpIssue({ number: n, url: `https://github.com/x/${n}`, author: BOT, title, body, labels });
+      issues.push(made);
+      writes.push(`create:${title}`);
+      return made;
+    },
   };
   return { gh, writes };
 }
@@ -163,6 +172,37 @@ describe('processDump', () => {
       expect(inputs).toEqual([]);
       expect(logs).toEqual(['Nothing to process']);
     }
+  });
+  it('skips a returned task matching one already created, without using a key', async () => {
+    const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
+    const keys: string[] = [];
+    const spy: ItemHandler = { type: 'task', create: async (_i, ctx) => (keys.push(ctx.key), { title: 't', url: 'u', details: [] }) };
+    const { gh } = fakeGh(dumpIssue(), [], { issues: [made] });
+    await run(gh, { items: [{ type: 'task', title: 'buy  MILK.' }, { type: 'task', title: 'Call bank' }], questions: [] }, [spy]);
+    expect(keys).toEqual(['i2']);
+  });
+  it('creates two same-titled tasks returned together before either exists', async () => {
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, { items: [{ type: 'task', title: 'Buy milk' }, { type: 'task', title: 'Buy milk' }], questions: [] }, [taskHandler]);
+    expect(writes.filter((w) => w.startsWith('create:'))).toHaveLength(2);
+  });
+  it('"buy milk and meeting with asif" creates exactly one Buy milk across the first run and the reply run (FR-6, FR-8)', async () => {
+    const issues: Issue[] = [];
+    const meeting: ItemHandler = { type: 'meeting', create: async () => ({ title: 'Meeting: Sync with Asif', url: 'https://github.com/x/m', details: [] }) };
+    const handlers = [taskHandler, meeting];
+    const first = fakeGh(dumpIssue({ title: 'buy milk and meeting with asif' }), [], { issues });
+    await run(first.gh, { items: [{ type: 'task', title: 'Buy milk' }], questions: [{ about: 'Meeting with Asif', question: 'When is the meeting?' }] }, handlers);
+    expect(first.writes).toContain('+needs-info#5');
+
+    const reply = fakeGh(dumpIssue({ title: 'buy milk and meeting with asif', labels: ['needs-info'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'monday 11am')], { issues });
+    const meet = { type: 'meeting', title: 'Sync with Asif', start: '2026-10-26T11:00:00+06:00', durationMinutes: 60, attendees: ['Asif'], agenda: '' };
+    // a misbehaving Claude returns Buy milk again; code still skips it
+    const { inputs } = await run(reply.gh, { items: [{ type: 'task', title: 'Buy milk' }, meet], questions: [] }, handlers);
+    expect(JSON.parse(inputs[0]).alreadyCreated).toEqual([{ type: 'task', title: 'Buy milk' }]);
+    expect(issues.map((i) => i.title)).toEqual(['Buy milk']);
+    expect(reply.writes.filter((w) => w.startsWith('create:'))).toEqual([]);
+    expect(reply.writes).toContain('+processed#5');
+    expect(reply.writes).toContain('close#5');
   });
 });
 

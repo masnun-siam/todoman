@@ -10,6 +10,7 @@ const rest = {
     listEvents: vi.fn(),
     removeLabel: rec('removeLabel', () => Promise.reject(Object.assign(new Error('gone'), { status: 404 }))),
     update: rec('update'),
+    create: rec('create', (a) => ({ data: { ...issue(9, '2026-10-21T06:00:00Z'), ...(a as object), html_url: 'https://github.com/o/r/issues/9', user: { login: 'github-actions[bot]' } } })),
   },
 };
 const lists: Map<unknown, unknown[]> = new Map([
@@ -37,5 +38,10 @@ describe('createGh (process methods)', () => {
   it('closeCompleted closes as completed', async () => {
     await gh.closeCompleted(5);
     expect(calls.update).toEqual([{ owner: 'o', repo: 'r', issue_number: 5, state: 'closed', state_reason: 'completed' }]);
+  });
+  it('createIssue sends title, body, labels and assignees and returns the issue', async () => {
+    const got = await gh.createIssue({ title: 'Buy milk', body: 'b', labels: ['task'], assignees: ['masnun-siam'] });
+    expect(calls.create).toEqual([{ owner: 'o', repo: 'r', title: 'Buy milk', body: 'b', labels: ['task'], assignees: ['masnun-siam'] }]);
+    expect(got).toMatchObject({ number: 9, title: 'Buy milk', url: 'https://github.com/o/r/issues/9', author: 'github-actions[bot]', labels: ['task'] });
   });
 });
