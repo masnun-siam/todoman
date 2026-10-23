@@ -1,16 +1,17 @@
 import type { ClaudeRequest } from './claude.js';
 import { createdItems, PROCESSING, readDump, setState, shouldProcess, thread, type CreatedItem, type Dump } from './dump.js';
+import { CANCELLED, failDump, failureComment, failureMessage, STEPS, type Step } from './failure.js';
 import type { ProcessGh } from './github.js';
 import { HANDLERS, type ItemHandler } from './handlers.js';
 import { parsePeople, type Person } from './invitees.js';
 import { nextKey } from './keys.js';
 import { LABELS } from './labels.js';
-import { BOT } from './markers.js';
+import { BOT, type ItemMarker } from './markers.js';
 import { isCreated } from './match.js';
 import { MODELS, PARSE_SYSTEM } from './prompts.js';
 import { endState, resultComment, type ItemResult } from './result.js';
 import { PARSER_SCHEMA } from './schema.js';
-import { validate } from './validate.js';
+import { validate, type ValidItem } from './validate.js';
 
 export interface ProcessDeps {
   gh: ProcessGh;
@@ -40,31 +41,8 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
   });
 }
 
-/** process mode (FR-2, FR-6, FR-8): gate on the live dump, parse, create items, post one result comment, set the end state. */
-export async function processDump(p: ProcessDeps): Promise<void> {
-  const d = await readDump(p.gh, p.issue);
-  if (!shouldProcess(d, p.owner, p.now())) {
-    p.log('Nothing to process');
-    return;
-  }
-  await setState(p.gh, d.issue, PROCESSING);
-  const [{ items: created, markers }, labels, peopleText] = await Promise.all([
-    createdItems(p.gh, p.repo, d),
-    p.gh.labelNames(),
-    p.gh.fileText('people.yml'),
-  ]);
-  const people = (peopleText !== null && parsePeople(peopleText)) || [];
-  const now = p.now();
-  const output = await p.claude({
-    model: MODELS.parse,
-    system: PARSE_SYSTEM,
-    schema: PARSER_SCHEMA,
-    input: buildInput(d, p.owner, p.tz, now, people, labels, created),
-    validate: (v) => typeof v === 'object' && v !== null && Array.isArray((v as { items?: unknown }).items),
-  });
-  const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join('\n');
-  const { items, questions } = validate(output, { now, text: ownText, labels, people });
-
+/** Create each item not created yet; a failed item never undoes the others (FR-9). */
+async function createItems(p: ProcessDeps, d: Dump, items: ValidItem[], created: CreatedItem[], markers: ItemMarker[]): Promise<ItemResult[]> {
   const results: ItemResult[] = [];
   for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
@@ -77,15 +55,68 @@ export async function processDump(p: ProcessDeps): Promise<void> {
     }
     try {
       results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
-    } catch {
-      results.push({ type: item.type, ok: false, title, reason: 'creating it failed' }); // fixed text: never an error body
+    } catch (e) {
+      results.push({ type: item.type, ok: false, title, reason: failureMessage(e) }); // fixed text: never an error body
     }
   }
+  return results;
+}
 
-  const state = endState(results, questions);
+/**
+ * process mode (FR-2, FR-6, FR-8, FR-9): gate on the live dump, parse, create items, post one result
+ * comment, set the end state. A step that throws leaves the dump `failed` with a fixed message, then rethrows.
+ */
+export async function processDump(p: ProcessDeps): Promise<void> {
+  const d = await readDump(p.gh, p.issue);
+  if (!shouldProcess(d, p.owner, p.now())) {
+    p.log('Nothing to process');
+    return;
+  }
+  await setState(p.gh, d.issue, PROCESSING);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
-  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-  await setState(p.gh, d.issue, state);
-  if (state === 'processed') await p.gh.closeCompleted(p.issue);
-  p.log(`Dump #${p.issue}: ${state}`);
+  let step: Step = STEPS.read;
+  try {
+    const [{ items: created, markers }, labels, peopleText] = await Promise.all([
+      createdItems(p.gh, p.repo, d),
+      p.gh.labelNames(),
+      p.gh.fileText('people.yml'),
+    ]);
+    const people = (peopleText !== null && parsePeople(peopleText)) || [];
+    const now = p.now();
+    step = STEPS.parse;
+    const output = await p.claude({
+      model: MODELS.parse,
+      system: PARSE_SYSTEM,
+      schema: PARSER_SCHEMA,
+      input: buildInput(d, p.owner, p.tz, now, people, labels, created),
+      validate: (v) => typeof v === 'object' && v !== null && Array.isArray((v as { items?: unknown }).items),
+    });
+    const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join('\n');
+    const { items, questions } = validate(output, { now, text: ownText, labels, people });
+
+    step = STEPS.create;
+    const results = await createItems(p, d, items, created, markers);
+
+    step = STEPS.result;
+    const state = endState(results, questions);
+    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+    await setState(p.gh, d.issue, state);
+    if (state === 'processed') await p.gh.closeCompleted(p.issue);
+    p.log(`Dump #${p.issue}: ${state}`);
+  } catch (e) {
+    // ponytail: if marking failed fails too, the dump stays processing and the workflow's failure step retries the mark
+    await failDump(p.gh, d.issue, failureComment(step, failureMessage(e), read)).catch(() => undefined);
+    throw e;
+  }
+}
+
+/** The workflow's failure/cancel step (FR-9): a dump the run left in todoman:processing ends `failed`. */
+export async function failInterruptedRun(gh: ProcessGh, n: number, log: (line: string) => void): Promise<void> {
+  const issue = await gh.getIssue(n);
+  if (issue.state !== 'open' || !issue.labels.includes(PROCESSING)) {
+    log('Nothing to mark failed');
+    return;
+  }
+  await failDump(gh, issue, failureComment(STEPS.run, CANCELLED));
+  log(`Dump #${n}: failed`);
 }

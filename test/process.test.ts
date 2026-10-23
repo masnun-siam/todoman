@@ -4,7 +4,10 @@ import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
 import type { ItemHandler } from '../src/handlers.js';
 import { taskHandler } from '../src/handlers/task.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
-import { processDump } from '../src/process.js';
+import { ClaudeError } from '../src/claude.js';
+import { RETRY } from '../src/failure.js';
+import { GoogleError } from '../src/google.js';
+import { failInterruptedRun, processDump } from '../src/process.js';
 import { endState } from '../src/result.js';
 
 const OWNER = 'masnun-siam';
@@ -143,7 +146,8 @@ describe('processDump', () => {
   it('a failed item gives failed, open, and never posts the error text', async () => {
     const { gh, writes } = fakeGh(dumpIssue());
     await run(gh, milk, [broken]);
-    expect(comments(writes)[0]).toContain('Buy milk — not created');
+    expect(comments(writes)[0]).toContain('Buy milk — not created: an unexpected error occurred');
+    expect(comments(writes)[0]).toContain(`Todoman failed while creating items. ${RETRY}`);
     expect(writes.join()).not.toContain('ghp_SECRET');
     expect(writes).toContain('+failed#5');
     expect(writes).not.toContain('close#5');
@@ -203,5 +207,74 @@ describe('processDump', () => {
     expect(reply.writes.filter((w) => w.startsWith('create:'))).toEqual([]);
     expect(reply.writes).toContain('+processed#5');
     expect(reply.writes).toContain('close#5');
+  });
+});
+
+describe('failures (FR-9)', () => {
+  const SECRET = 'ghp_SECRET123';
+  it.each([
+    ['Claude times out', { claude: new ClaudeError('timeout') }, 'parsing it with Claude: Claude timed out.'],
+    ['Claude returns invalid output twice', { claude: new ClaudeError('invalid') }, 'parsing it with Claude: Claude returned invalid output twice.'],
+    ['Claude throws an error holding a secret', { claude: new Error(`401 ${SECRET}`) }, 'parsing it with Claude: an unexpected error occurred'],
+    ['a GitHub read fails with the body', { gh: Object.assign(new Error(`{"message":"${SECRET}"}`), { status: 502 }) }, 'reading the dump: a GitHub request failed'],
+  ] as const)('%s: failed, named step, fixed message, retry line, read marker, rethrown', async (_n, fail, want) => {
+    const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
+    if ('gh' in fail) gh.labelNames = async () => { throw fail.gh; };
+    const claude = async () => { if ('claude' in fail) throw fail.claude; return milk; };
+    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
+    const [c, ...rest] = comments(writes);
+    expect(rest).toEqual([]);
+    expect(c).toContain(`Todoman failed while ${want}`);
+    expect(c).toContain(`${RETRY}\n\n${readMarker(8)}`);
+    expect(writes.join()).not.toContain(SECRET);
+    expect(writes.slice(-2)).toEqual(['+failed#5', '-todoman:processing#5']);
+  });
+  it('a revoked Google token fails the item with how to renew it, keeping the items created', async () => {
+    const meeting: ItemHandler = { type: 'meeting', create: async () => { throw new GoogleError('auth'); } };
+    const meet = { type: 'meeting', title: 'Sync with Asif', start: '2026-10-26T11:00:00+06:00', durationMinutes: 60, attendees: ['Asif'], agenda: '' };
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, { items: [...milk.items, meet], questions: [] }, [task, meeting]);
+    const [c] = comments(writes);
+    expect(c).toContain('Buy milk](https://github.com/x/9)');
+    expect(c).toContain('Sync with Asif — not created: the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.');
+    expect(c).toContain(RETRY);
+    expect(writes).toContain('+failed#5');
+  });
+  it('an owner reply on a failed dump reprocesses it and creates only the missing items', async () => {
+    const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
+    const issues = [made];
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['failed'] }), [comment(10, BOT, `failed\n${readMarker(4)}`), comment(12, OWNER, 'retry')], { issues });
+    await run(gh, { items: [{ type: 'task', title: 'Buy milk' }, { type: 'task', title: 'Call bank' }], questions: [] }, [taskHandler]);
+    expect(issues.map((i) => i.title)).toEqual(['Buy milk', 'Call bank']);
+    expect(writes).toContain('-failed#5');
+    expect(writes).toContain('close#5');
+  });
+  it('a dump stuck in processing for over 15 minutes is reprocessed by the next owner comment', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['todoman:processing'] }), [comment(12, OWNER, 'retry')], { since: new Date(NOW.getTime() - 16 * MIN) });
+    await run(gh, milk);
+    expect(writes).toContain('+processed#5');
+  });
+});
+
+describe('failInterruptedRun (cancel or timeout, FR-9)', () => {
+  it('marks a dump left in processing failed with the cancel message', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['todoman:processing'] }));
+    await failInterruptedRun(gh, 5, () => undefined);
+    expect(writes).toEqual([
+      `comment#5:Todoman failed while running the workflow: the run was cancelled or timed out before it finished.\n\n${RETRY}`,
+      '+failed#5',
+      '-todoman:processing#5',
+    ]);
+  });
+  it.each([
+    ['already failed by the run', dumpIssue({ labels: ['failed'] })],
+    ['never started processing', dumpIssue()],
+    ['closed', dumpIssue({ state: 'closed', labels: ['todoman:processing'] })],
+  ])('does nothing when the dump was %s', async (_n, issue) => {
+    const { gh, writes } = fakeGh(issue);
+    const logs: string[] = [];
+    await failInterruptedRun(gh, 5, (l) => logs.push(l));
+    expect(writes).toEqual([]);
+    expect(logs).toEqual(['Nothing to mark failed']);
   });
 });

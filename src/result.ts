@@ -1,4 +1,5 @@
 import type { EndState } from './dump.js';
+import { RETRY, STEPS } from './failure.js';
 import type { Created } from './handlers.js';
 import { readMarker } from './markers.js';
 import type { Question } from './validate.js';
@@ -23,6 +24,7 @@ export function resultComment(results: ItemResult[], questions: Question[], stat
   if (results.length) parts.push(['Todoman created:', ...results.map(line)].join('\n'));
   if (questions.length) parts.push(['Questions:', ...questions.map((q) => `- ${q.about}: ${q.question}`), '', 'Reply here to answer.'].join('\n'));
   if (state === 'processed') parts.push('To change anything, open a new dump.');
+  if (state === 'failed') parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
   parts.push(readMarker(read));
   return parts.join('\n\n');
 }
