@@ -7,7 +7,7 @@ import type { Calendar } from './google.js';
 import { HANDLERS, type ItemHandler, type Summarise } from './handlers.js';
 import { parsePeople, type Person } from './invitees.js';
 import { nextKey } from './keys.js';
-import { LABELS } from './labels.js';
+import { hasLabel, isTodomanLabel } from './labels.js';
 import { BOT } from './markers.js';
 import { isCreated } from './match.js';
 import { MODELS, PARSE_SYSTEM } from './prompts.js';
@@ -32,7 +32,6 @@ export interface ProcessDeps {
   handlers?: ItemHandler[];
 }
 
-const TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 
 /** The JSON Claude reads: dump, thread with timestamps, clock, people, labels and items already created. */
 export function buildInput(d: Dump, owner: string, tz: string, now: Date, people: Person[], labels: string[], created: CreatedItem[]): string {
@@ -42,7 +41,7 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
     dump: { title: d.issue.title, body: d.issue.body, at: d.issue.createdAt },
     thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? 'Todoman' : 'owner', at: c.createdAt, text: c.body.replace(/<!--[\s\S]*?-->/g, '').trim() })),
     people: people.map((p) => p.name),
-    labels: labels.filter((l) => !TODOMAN_LABELS.has(l)),
+    labels: labels.filter((l) => !isTodomanLabel(l)),
     alreadyCreated: created.map((c) => ({ type: c.type, title: c.title })),
   });
 }
@@ -68,7 +67,7 @@ export async function processDump(p: ProcessDeps): Promise<void> {
     p.log('Nothing to process');
     return;
   }
-  const answered = d.issue.labels.includes('needs-info'); // read before setState swaps the label
+  const answered = hasLabel(d.issue.labels, 'needs-info'); // read before setState swaps the label
   await setState(p.gh, d.issue, PROCESSING);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
   const at: { step: Step } = { step: STEPS.read };
@@ -90,7 +89,7 @@ export async function processDump(p: ProcessDeps): Promise<void> {
 /** The workflow's failure/cancel step (FR-9): a dump the run left in todoman:processing ends `failed`. */
 export async function failInterruptedRun(gh: ProcessGh, n: number, log: (line: string) => void): Promise<void> {
   const issue = await gh.getIssue(n);
-  if (issue.state !== 'open' || !issue.labels.includes(PROCESSING)) {
+  if (issue.state !== 'open' || !hasLabel(issue.labels, PROCESSING)) {
     log('Nothing to mark failed');
     return;
   }

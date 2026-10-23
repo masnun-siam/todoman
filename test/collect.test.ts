@@ -65,6 +65,21 @@ describe('collect', () => {
     expect(gh.listComments).not.toHaveBeenCalledWith(1);
   });
 
+  it("reads Todoman's labels whatever their case in the repo", async () => {
+    const gh = stub({
+      all: [
+        issue(1, { author: OWNER, labels: ['Processed'], state: 'closed', closedAt: IN }), // dump
+        issue(2, { author: OWNER, labels: ['Todoman:Processing'] }), // dump
+        issue(3, { author: OWNER, labels: ['Summary'] }), // not a dump, still no activity
+        issue(4, { author: OWNER, labels: ['Task'] }),
+        issue(5, { labels: ['Tracking'], body: refMarker('masnun-siam/meeting-manager#85') }),
+      ],
+    });
+    const got = await collect(gh, noReader, OWNER, P);
+    expect(numbers(got)).toEqual([4, 5]);
+    expect(got.tracked.map((t) => t.issue)).toEqual([5]);
+  });
+
   it('includes every open task, even one untouched in the period', async () => {
     const gh = stub({ all: [issue(1, { updatedAt: BEFORE }), issue(2, { updatedAt: BEFORE, state: 'closed', closedAt: BEFORE })] });
     expect(numbers(await collect(gh, noReader, OWNER, P))).toEqual([1]);

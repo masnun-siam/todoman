@@ -1,12 +1,11 @@
 import { STATE_LABELS } from './dump.js';
 import { inPeriod, parseRef, type ExternalActivity, type ExternalReader, type Period } from './external.js';
 import type { DatedIssue, IssueComment, SummaryGh } from './github.js';
-import { LABELS } from './labels.js';
+import { hasLabel, isTodomanLabel, labelIn } from './labels.js';
 import { parseItemMarkers, parseRefMarkers } from './markers.js';
 
 export const MAX_ISSUES = 300;
 const NEXT_MS = 7 * 86_400_000;
-const TODOMAN_LABELS = LABELS.map((l) => l.name);
 
 export interface CollectedIssue extends DatedIssue {
   /** In-period comments; for a meeting whose start falls in the period, all of them (summaries come after it). */
@@ -30,9 +29,9 @@ export interface Collected {
 
 /** A dump: opened by the owner and carrying none of Todoman's labels or one of the dump state labels. */
 const isDump = (i: DatedIssue, owner: string): boolean =>
-  i.author === owner && (!i.labels.some((l) => TODOMAN_LABELS.includes(l)) || i.labels.some((l) => STATE_LABELS.includes(l)));
+  i.author === owner && (!i.labels.some(isTodomanLabel) || i.labels.some((l) => labelIn(l, STATE_LABELS)));
 /** Dumps and summaries are never activity (FR-10). */
-const counts = (i: DatedIssue, owner: string): boolean => !isDump(i, owner) && !i.labels.includes('summary');
+const counts = (i: DatedIssue, owner: string): boolean => !isDump(i, owner) && !hasLabel(i.labels, 'summary');
 const startOf = (i: DatedIssue): string | undefined => parseItemMarkers([i]).find((m) => m.start)?.start;
 
 /**
@@ -75,12 +74,12 @@ export async function collect(gh: SummaryGh, reader: Pick<ExternalReader, 'readE
   const tracked: Tracked[] = [];
   for (const i of kept) {
     const start = startOf(i);
-    const meetingInPeriod = i.labels.includes('meeting') && start !== undefined && inPeriod(start, p);
+    const meetingInPeriod = hasLabel(i.labels, 'meeting') && start !== undefined && inPeriod(start, p);
     // a comment bumps updated_at, so an issue last updated before `p` has no in-period comment to read
     const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
     const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
     issues.push({ ...i, comments, ...(start ? { start } : {}) });
-    if (!i.labels.includes('tracking')) continue;
+    if (!hasLabel(i.labels, 'tracking')) continue;
     const ref = parseRefMarkers([i])[0];
     const r = ref ? parseRef(ref) : null;
     if (r) tracked.push({ issue: i.number, ref, activity: await reader.readExternalActivity(r, p) });

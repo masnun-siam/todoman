@@ -87,6 +87,10 @@ describe('validate', () => {
     const r = one({ type: 'task', title: 'a', labels: ['finance'] }, { ...ctx, labels: ['Finance'] });
     expect(r.items[0]).toMatchObject({ labels: ['Finance'] });
   });
+  it("drops Todoman's own labels whatever their case in the repo", () => {
+    const r = one({ type: 'task', title: 'a', labels: ['task', 'processed', 'todoman:x', 'finance'] }, { ...ctx, labels: ['Task', 'Processed', 'Todoman:X', 'Finance'] });
+    expect(r.items[0]).toMatchObject({ labels: ['Finance'] });
+  });
   it('rejects a second meeting at the same instant', () => {
     const r = validate({ items: [meeting, { ...meeting, title: 'other', start: '2026-10-26T05:00:00Z' }], questions: [] }, ctx);
     expect(r.items).toHaveLength(1);

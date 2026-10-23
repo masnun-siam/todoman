@@ -1,6 +1,6 @@
 import { daysBetween, isDate, localDate, parseWithOffset } from './dates.js';
 import { resolveInvitees, type Person } from './invitees.js';
-import { LABELS } from './labels.js';
+import { isTodomanLabel } from './labels.js';
 import { MAX_ITEMS, TOO_MANY } from './questions.js';
 import { sanitize } from './sanitize.js';
 
@@ -28,7 +28,6 @@ export interface ValidateContext {
   people: Person[];
 }
 
-const TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 const YEAR = 365 * 86_400_000;
 
 type Raw = Record<string, unknown>;
@@ -49,7 +48,7 @@ function task(raw: Raw, ctx: ValidateContext): ValidItem | string {
   if (raw.due !== undefined && !isDate(raw.due)) return 'What is the due date (YYYY-MM-DD)?';
   const labels = (names(raw.labels) ?? [])
     .map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())) // GitHub labels are case-insensitive; keep the repo's spelling
-    .filter((l): l is string => !!l && !TODOMAN_LABELS.has(l) && !l.startsWith('repo:') && !l.startsWith('todoman:'));
+    .filter((l): l is string => !!l && !isTodomanLabel(l) && !l.startsWith('repo:') && !l.toLowerCase().startsWith('todoman:'));
   return { type: 'task', title, body: text(raw.body), labels, ...(raw.due ? { due: raw.due as string } : {}) };
 }
 

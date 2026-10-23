@@ -1,4 +1,5 @@
 import type { Issue, IssueComment, ProcessGh } from './github.js';
+import { hasLabel, labelIn } from './labels.js';
 import { BOT, lastRead, parseItemMarkers, parseRefMarkers, type ItemMarker } from './markers.js';
 
 export const PROCESSING = 'todoman:processing';
@@ -29,7 +30,7 @@ export interface CreatedItem {
 /** The live dump: issue, whole thread and how long it has been processing. */
 export async function readDump(gh: ProcessGh, n: number): Promise<Dump> {
   const [issue, comments] = await Promise.all([gh.getIssue(n), gh.listComments(n)]);
-  const processingSince = issue.labels.includes(PROCESSING) ? await gh.labeledAt(n, PROCESSING) : null;
+  const processingSince = hasLabel(issue.labels, PROCESSING) ? await gh.labeledAt(n, PROCESSING) : null;
   return { issue, comments, processingSince };
 }
 
@@ -39,8 +40,8 @@ export async function readDump(gh: ProcessGh, n: number): Promise<Dump> {
  */
 export function shouldProcess(d: Dump, owner: string, now: Date): boolean {
   const { issue } = d;
-  if (issue.state !== 'open' || issue.author !== owner || issue.labels.some((l) => TYPE_LABELS.includes(l))) return false;
-  const states = issue.labels.filter((l) => STATE_LABELS.includes(l));
+  if (issue.state !== 'open' || issue.author !== owner || issue.labels.some((l) => labelIn(l, TYPE_LABELS))) return false;
+  const states = issue.labels.map((l) => l.toLowerCase()).filter((l) => STATE_LABELS.includes(l));
   if (states.length === 0) return true;
   if (states.includes(PROCESSING)) {
     // ponytail: no label event found counts as not stuck; the next comment after it shows up retries
@@ -59,7 +60,7 @@ export async function createdItems(gh: ProcessGh, repo: string, d: Dump): Promis
     const src = [{ author: i.author, body: i.body }];
     const [ref] = parseRefMarkers(src);
     for (const m of parseItemMarkers(src).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? 'item', title: i.title, url: i.url, ...(m.start ? { start: m.start } : {}), ...(ref ? { ref } : {}) });
+      items.push({ key: m.key, type: i.labels.find((l) => labelIn(l, TYPE_LABELS))?.toLowerCase() ?? 'item', title: i.title, url: i.url, ...(m.start ? { start: m.start } : {}), ...(ref ? { ref } : {}) });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);
@@ -71,7 +72,8 @@ export const thread = (d: Dump, owner: string): IssueComment[] => d.comments.fil
 
 /** Swap the dump's state label: add the new one first, so it never sits with none. */
 export async function setState(gh: ProcessGh, issue: Issue, state: EndState | typeof PROCESSING): Promise<void> {
-  if (!issue.labels.includes(state)) await gh.addLabel(issue.number, state);
-  for (const l of issue.labels.filter((x) => STATE_LABELS.includes(x) && x !== state)) await gh.removeLabel(issue.number, l);
-  issue.labels = [...issue.labels.filter((x) => !STATE_LABELS.includes(x)), state];
+  if (!hasLabel(issue.labels, state)) await gh.addLabel(issue.number, state);
+  // remove with the issue's own spelling; keep the one already carrying `state`
+  for (const l of issue.labels.filter((x) => labelIn(x, STATE_LABELS) && x.toLowerCase() !== state)) await gh.removeLabel(issue.number, l);
+  issue.labels = [...issue.labels.filter((x) => !labelIn(x, STATE_LABELS)), state];
 }
