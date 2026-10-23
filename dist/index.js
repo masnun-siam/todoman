@@ -32124,6 +32124,96 @@ async function canReadOwner(token, owner) {
   }
 }
 
+// src/google.ts
+var GoogleError = class extends Error {
+  constructor(kind) {
+    super({
+      auth: "Google authorization failed; renew GOOGLE_REFRESH_TOKEN",
+      failed: "Google Calendar request failed"
+    }[kind]);
+    this.kind = kind;
+  }
+  kind;
+};
+var TOKEN_URL = "https://oauth2.googleapis.com/token";
+var EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+var TIMEOUT_MS = 3e4;
+async function refresh(env, fetchFn) {
+  const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, GOOGLE_REFRESH_TOKEN: refreshToken } = env;
+  if (!id || !secret || !refreshToken) throw new GoogleError("auth");
+  const res = await fetchFn(TOKEN_URL, {
+    method: "POST",
+    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refreshToken, grant_type: "refresh_token" }),
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  }).catch(() => {
+    throw new GoogleError("failed");
+  });
+  if (res.status === 400 || res.status === 401) throw new GoogleError("auth");
+  if (!res.ok) throw new GoogleError("failed");
+  const body = await res.json().catch(() => ({}));
+  if (typeof body.access_token !== "string" || !body.access_token) throw new GoogleError("failed");
+  return { token: body.access_token, scopes: typeof body.scope === "string" ? body.scope.split(" ") : [] };
+}
+var refreshAccessToken = async (env, fetchFn = fetch) => (await refresh(env, fetchFn)).token;
+var EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
+async function probeCalendar(env, fetchFn = fetch) {
+  const { token, scopes } = await refresh(env, fetchFn);
+  if (!scopes.includes(EVENTS_SCOPE)) return "scope";
+  const res = await fetchFn(`${EVENTS_URL}?maxResults=1`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => void 0);
+  await res?.body?.cancel();
+  return res?.ok ? "ok" : "read";
+}
+function result(status2, ev) {
+  if (ev.status === "cancelled") return { status: "deleted" };
+  if (!ev.htmlLink) throw new GoogleError("failed");
+  const meetLink = ev.hangoutLink ?? ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri;
+  return { status: status2, meetLink, eventLink: ev.htmlLink };
+}
+function createCalendar(env, fetchFn = fetch) {
+  let token;
+  async function call(url, init = {}) {
+    token ??= refreshAccessToken(env, fetchFn);
+    const headers = { authorization: `Bearer ${await token}`, "content-type": "application/json" };
+    const res = await fetchFn(url, { ...init, headers, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => {
+      throw new GoogleError("failed");
+    });
+    if (res.status === 401) throw new GoogleError("auth");
+    return res;
+  }
+  const json = async (res) => await res.json().catch(() => ({}));
+  async function getEvent(id) {
+    const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}`);
+    if (res.status === 404 || res.status === 410) return { status: "deleted" };
+    if (!res.ok) throw new GoogleError("failed");
+    return result("existing", await json(res));
+  }
+  return {
+    async insertEvent(e) {
+      const body = {
+        id: e.id,
+        summary: e.title,
+        description: e.description,
+        start: { dateTime: e.start, timeZone: e.timeZone },
+        end: { dateTime: e.end, timeZone: e.timeZone },
+        attendees: e.invitees.map((email) => ({ email })),
+        conferenceData: { createRequest: { requestId: e.id, conferenceSolutionKey: { type: "hangoutsMeet" } } }
+      };
+      const res = await call(`${EVENTS_URL}?conferenceDataVersion=1&sendUpdates=all`, { method: "POST", body: JSON.stringify(body) });
+      if (res.status === 409) {
+        await res.body?.cancel();
+        return getEvent(e.id);
+      }
+      if (!res.ok) throw new GoogleError("failed");
+      return result("created", await json(res));
+    },
+    async describeEvent(id, description) {
+      const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=none`, { method: "PATCH", body: JSON.stringify({ description }) });
+      await res.body?.cancel();
+      if (!res.ok) throw new GoogleError("failed");
+    }
+  };
+}
+
 // src/invitees.ts
 var import_yaml = __toESM(require_dist(), 1);
 function parsePeople(text2) {
@@ -32222,7 +32312,8 @@ function secretChecks(env, deps) {
         if (gone) return gone;
         try {
           await deps.claude({ ...PING, model: MODELS.parse });
-        } catch {
+        } catch (e) {
+          if (e instanceof ClaudeError && e.kind === "install") return "Could not install the Claude CLI; re-run doctor.";
           return "Renew CLAUDE_CODE_OAUTH_TOKEN with `claude setup-token`.";
         }
       }
@@ -32235,7 +32326,8 @@ function secretChecks(env, deps) {
         let probe;
         try {
           probe = await deps.probeCalendar();
-        } catch {
+        } catch (e) {
+          if (!(e instanceof GoogleError && e.kind === "auth")) return "Could not reach Google; re-run doctor.";
           return "Google refused the refresh; check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and renew GOOGLE_REFRESH_TOKEN.";
         }
         return probe === "ok" ? void 0 : GOOGLE_FIX[probe];
@@ -32362,96 +32454,6 @@ function createGh(env) {
     },
     async createIssue(i) {
       return toIssue((await api.issues.create({ owner, repo, ...i })).data);
-    }
-  };
-}
-
-// src/google.ts
-var GoogleError = class extends Error {
-  constructor(kind) {
-    super({
-      auth: "Google authorization failed; renew GOOGLE_REFRESH_TOKEN",
-      failed: "Google Calendar request failed"
-    }[kind]);
-    this.kind = kind;
-  }
-  kind;
-};
-var TOKEN_URL = "https://oauth2.googleapis.com/token";
-var EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
-var TIMEOUT_MS = 3e4;
-async function refresh(env, fetchFn) {
-  const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, GOOGLE_REFRESH_TOKEN: refreshToken } = env;
-  if (!id || !secret || !refreshToken) throw new GoogleError("auth");
-  const res = await fetchFn(TOKEN_URL, {
-    method: "POST",
-    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refreshToken, grant_type: "refresh_token" }),
-    signal: AbortSignal.timeout(TIMEOUT_MS)
-  }).catch(() => {
-    throw new GoogleError("failed");
-  });
-  if (res.status === 400 || res.status === 401) throw new GoogleError("auth");
-  if (!res.ok) throw new GoogleError("failed");
-  const body = await res.json().catch(() => ({}));
-  if (typeof body.access_token !== "string" || !body.access_token) throw new GoogleError("failed");
-  return { token: body.access_token, scopes: typeof body.scope === "string" ? body.scope.split(" ") : [] };
-}
-var refreshAccessToken = async (env, fetchFn = fetch) => (await refresh(env, fetchFn)).token;
-var EVENTS_SCOPE = "https://www.googleapis.com/auth/calendar.events";
-async function probeCalendar(env, fetchFn = fetch) {
-  const { token, scopes } = await refresh(env, fetchFn);
-  if (!scopes.includes(EVENTS_SCOPE)) return "scope";
-  const res = await fetchFn(`${EVENTS_URL}?maxResults=1`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => void 0);
-  await res?.body?.cancel();
-  return res?.ok ? "ok" : "read";
-}
-function result(status2, ev) {
-  if (ev.status === "cancelled") return { status: "deleted" };
-  if (!ev.htmlLink) throw new GoogleError("failed");
-  const meetLink = ev.hangoutLink ?? ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri;
-  return { status: status2, meetLink, eventLink: ev.htmlLink };
-}
-function createCalendar(env, fetchFn = fetch) {
-  let token;
-  async function call(url, init = {}) {
-    token ??= refreshAccessToken(env, fetchFn);
-    const headers = { authorization: `Bearer ${await token}`, "content-type": "application/json" };
-    const res = await fetchFn(url, { ...init, headers, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => {
-      throw new GoogleError("failed");
-    });
-    if (res.status === 401) throw new GoogleError("auth");
-    return res;
-  }
-  const json = async (res) => await res.json().catch(() => ({}));
-  async function getEvent(id) {
-    const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}`);
-    if (res.status === 404 || res.status === 410) return { status: "deleted" };
-    if (!res.ok) throw new GoogleError("failed");
-    return result("existing", await json(res));
-  }
-  return {
-    async insertEvent(e) {
-      const body = {
-        id: e.id,
-        summary: e.title,
-        description: e.description,
-        start: { dateTime: e.start, timeZone: e.timeZone },
-        end: { dateTime: e.end, timeZone: e.timeZone },
-        attendees: e.invitees.map((email) => ({ email })),
-        conferenceData: { createRequest: { requestId: e.id, conferenceSolutionKey: { type: "hangoutsMeet" } } }
-      };
-      const res = await call(`${EVENTS_URL}?conferenceDataVersion=1&sendUpdates=all`, { method: "POST", body: JSON.stringify(body) });
-      if (res.status === 409) {
-        await res.body?.cancel();
-        return getEvent(e.id);
-      }
-      if (!res.ok) throw new GoogleError("failed");
-      return result("created", await json(res));
-    },
-    async describeEvent(id, description) {
-      const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=none`, { method: "PATCH", body: JSON.stringify({ description }) });
-      await res.body?.cancel();
-      if (!res.ok) throw new GoogleError("failed");
     }
   };
 }

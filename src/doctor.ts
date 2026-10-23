@@ -1,9 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import type { ClaudeRequest } from './claude.js';
+import { ClaudeError, type ClaudeRequest } from './claude.js';
 import type { Env } from './config.js';
 import { parseReadTokens, READ_TOKENS_ERROR } from './external.js';
-import type { CalendarProbe } from './google.js';
+import { GoogleError, type CalendarProbe } from './google.js';
 import { parsePeople } from './invitees.js';
 import { LABELS } from './labels.js';
 import { MODELS } from './prompts.js';
@@ -85,7 +85,8 @@ export function secretChecks(env: Env, deps: SecretDeps): Check[] {
         if (gone) return gone;
         try {
           await deps.claude({ ...PING, model: MODELS.parse });
-        } catch {
+        } catch (e) {
+          if (e instanceof ClaudeError && e.kind === 'install') return 'Could not install the Claude CLI; re-run doctor.';
           return 'Renew CLAUDE_CODE_OAUTH_TOKEN with `claude setup-token`.'; // fixed text: never the CLI's output
         }
       },
@@ -98,7 +99,8 @@ export function secretChecks(env: Env, deps: SecretDeps): Check[] {
         let probe: CalendarProbe;
         try {
           probe = await deps.probeCalendar();
-        } catch {
+        } catch (e) {
+          if (!(e instanceof GoogleError && e.kind === 'auth')) return 'Could not reach Google; re-run doctor.';
           return 'Google refused the refresh; check GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET and renew GOOGLE_REFRESH_TOKEN.';
         }
         return probe === 'ok' ? undefined : GOOGLE_FIX[probe];

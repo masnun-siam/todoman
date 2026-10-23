@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest';
 import { baseChecks, runDoctor, secretChecks, type SecretDeps } from '../src/doctor.js';
 import type { Gh } from '../src/github.js';
 import { LABELS } from '../src/labels.js';
+import { ClaudeError } from '../src/claude.js';
+import { GoogleError } from '../src/google.js';
 
 const TEMPLATE = 'name: x\n';
 const PEOPLE = '- name: A\n  aliases: [a]\n  email: a@example.com\n';
@@ -125,6 +127,21 @@ describe('doctor secret checks', () => {
     const { out } = await secretDoctor(SECRETS, deps({ canReadOwner: async (_t, o) => o !== 'acme' }).d);
     expect(out).toContain('token for acme (');
     expect(out).not.toContain('masnun-siam');
+  });
+  it('tells a failed CLI install and an unreachable Google apart from a bad secret', async () => {
+    const { d } = deps({
+      claude: async () => {
+        throw new ClaudeError('install');
+      },
+      probeCalendar: async () => {
+        throw new GoogleError('failed');
+      },
+    });
+    const { out } = await secretDoctor(SECRETS, d);
+    expect(out).toContain('Could not install the Claude CLI');
+    expect(out).toContain('Could not reach Google');
+    const auth = await secretDoctor(SECRETS, deps({ probeCalendar: async () => Promise.reject(new GoogleError('auth')) }).d);
+    expect(auth.out).toContain('Google refused the refresh');
   });
   it('never prints a token or an error body', async () => {
     const boom = async (): Promise<never> => {
