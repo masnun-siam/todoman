@@ -1,6 +1,7 @@
 import type { Collected, CollectedIssue, Tracked } from './collect.js';
 import { addDays, atLocal, localDate, localTime } from './dates.js';
 import { inPeriod, type Period } from './external.js';
+import { hasLabel } from './labels.js';
 import { BOT } from './markers.js';
 import { sanitize } from './sanitize.js';
 
@@ -35,7 +36,7 @@ export interface Sections {
 
 /** A task's due date from the `Due: YYYY-MM-DD` line its body carries (FR-3). */
 export const dueOf = (i: CollectedIssue): string | undefined => /^Due: (\d{4}-\d{2}-\d{2})$/m.exec(i.body)?.[1];
-const has = (i: CollectedIssue, label: string): boolean => i.labels.includes(label);
+const has = (i: CollectedIssue, label: string): boolean => hasLabel(i.labels, label);
 /** Comment text Claude reads: markers stripped, empty ones dropped. */
 const texts = (i: CollectedIssue, from: (author: string) => boolean = () => true): string[] =>
   i.comments.filter((c) => from(c.author)).map((c) => c.body.replace(/<!--[\s\S]*?-->/g, '').trim()).filter(Boolean);

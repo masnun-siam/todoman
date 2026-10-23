@@ -118,7 +118,7 @@ export function createGh(env: Env): Gh & ProcessGh & SummaryGh {
     },
     async labeledAt(n, label) {
       const rows = await octokit.paginate(api.issues.listEvents, { owner, repo, issue_number: n, per_page: 100 });
-      const hit = rows.filter((e) => e.event === 'labeled' && 'label' in e && e.label?.name === label).at(-1);
+      const hit = rows.filter((e) => e.event === 'labeled' && 'label' in e && e.label?.name.toLowerCase() === label.toLowerCase()).at(-1);
       return hit ? new Date(hit.created_at) : null;
     },
     async issuesSince(since) {

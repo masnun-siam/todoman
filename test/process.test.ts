@@ -11,7 +11,7 @@ import { taskHandler } from '../src/handlers/task.js';
 import { trackingHandler } from '../src/handlers/tracking.js';
 import type { Calendar } from '../src/google.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
-import { failInterruptedRun, processDump, type ProcessDeps } from '../src/process.js';
+import { buildInput, failInterruptedRun, processDump, type ProcessDeps } from '../src/process.js';
 import { endState } from '../src/result.js';
 
 const OWNER = 'masnun-siam';
@@ -100,6 +100,12 @@ describe('gate (FR-8)', () => {
     expect(shouldProcess(d([l], [read, comment(11, OWNER)]), OWNER, NOW)).toBe(true);
     expect(shouldProcess(d([l], [comment(11, OWNER)]), OWNER, NOW)).toBe(true);
   });
+  it('reads state and type labels whatever their case', () => {
+    expect(shouldProcess(d(['Task']), OWNER, NOW)).toBe(false);
+    expect(shouldProcess(d(['Processed'], [read, comment(11, OWNER)]), OWNER, NOW)).toBe(false);
+    expect(shouldProcess(d(['Needs-Info'], [read, comment(11, OWNER)]), OWNER, NOW)).toBe(true);
+    expect(shouldProcess(d(['Todoman:Processing'], [read, comment(11, OWNER)], { processingSince: new Date(NOW.getTime() - 14 * MIN) }), OWNER, NOW)).toBe(false);
+  });
   it('ignores a read marker not written by the bot', () => {
     expect(shouldProcess(d(['needs-info'], [comment(9, OWNER), comment(10, OWNER, readMarker(99))]), OWNER, NOW)).toBe(true);
   });
@@ -132,6 +138,16 @@ describe('processDump', () => {
     expect(input).toMatchObject({ now: NOW.toISOString(), timezone: 'Asia/Dhaka', dump: { title: 'buy milk', at: '2026-10-21T05:00:00Z' }, people: ['Asif'], labels: ['area:home'] });
     expect(input.thread).toEqual([{ from: 'Todoman', at: '2026-10-21T05:30:00Z', text: 'When?' }, { from: 'owner', at: '2026-10-21T05:30:00Z', text: 'monday' }]);
     expect(input.alreadyCreated).toEqual([{ type: 'task', title: 'Call bank' }]);
+  });
+  it("never offers Todoman's own labels to Claude, whatever their case", () => {
+    const input = JSON.parse(buildInput({ issue: dumpIssue(), comments: [], processingSince: null }, OWNER, 'Asia/Dhaka', NOW, [], ['Task', 'Processed', 'Todoman:Processing', 'area:home'], []));
+    expect(input.labels).toEqual(['area:home']);
+  });
+  it('swaps a state label spelled in another case without adding it twice', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['Needs-Info'] }), [comment(6, OWNER)]);
+    await run(gh, milk);
+    expect(writes.slice(0, 2)).toEqual(['+todoman:processing#5', '-Needs-Info#5']);
+    expect(writes.slice(-3)).toEqual(['+processed#5', '-todoman:processing#5', 'close#5']);
   });
   it('assigns keys after the highest already used for the dump', async () => {
     const made = dumpIssue({ number: 9, author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i3' }) });

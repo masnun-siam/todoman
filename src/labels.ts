@@ -14,3 +14,9 @@ export const LABELS: LabelSpec[] = [
   { name: 'needs-info', color: 'd93f0b', description: 'Todoman needs an answer to continue' },
   { name: 'failed', color: 'b60205', description: 'Todoman failed on this dump; comment to retry' },
 ];
+
+/** GitHub label names are case-insensitive and come back in the repo's spelling; Todoman's names are lowercase. */
+export const labelIn = (label: string, names: readonly string[]): boolean => names.includes(label.toLowerCase());
+export const hasLabel = (labels: string[], name: string): boolean => labels.some((l) => l.toLowerCase() === name);
+const TODOMAN_LABELS = LABELS.map((l) => l.name);
+export const isTodomanLabel = (label: string): boolean => labelIn(label, TODOMAN_LABELS);

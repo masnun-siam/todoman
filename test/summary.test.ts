@@ -94,6 +94,12 @@ describe('weeklySummary', () => {
     expect(JSON.parse(req.input).meetings).toEqual([{ issue: 4, title: 'Meeting: M4', summaries: ['We agreed to ship on Monday.'] }]);
   });
 
+  it('buckets tasks and meetings whatever the case of their labels', async () => {
+    const { d, created } = deps({ all: [issue(1, { labels: ['Task'] }), meeting(2, '2026-10-19T05:00:00.000Z', { labels: ['Meeting'] })] });
+    await weeklySummary(d);
+    expect(section(created[0].body, 'Open')).toBe(`- [Task 1](${url(1)})`);
+    expect(section(created[0].body, 'Meetings')).toBe(`- 2026-10-19 11:00: [Meeting: M2](${url(2)}) — ${NO_SUMMARY}`);
+  });
   it('creates nothing when a weekly summary was created less than 24 hours earlier', async () => {
     const { d, created, logs } = deps({ all: [closed(1), weekly(6, '2026-10-21T13:00:00Z', FROM, '2026-10-21T13:00:00Z')] });
     await weeklySummary(d);

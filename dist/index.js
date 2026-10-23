@@ -32271,6 +32271,10 @@ var LABELS = [
   { name: "needs-info", color: "d93f0b", description: "Todoman needs an answer to continue" },
   { name: "failed", color: "b60205", description: "Todoman failed on this dump; comment to retry" }
 ];
+var labelIn = (label, names2) => names2.includes(label.toLowerCase());
+var hasLabel = (labels, name) => labels.some((l) => l.toLowerCase() === name);
+var TODOMAN_LABELS = LABELS.map((l) => l.name);
+var isTodomanLabel = (label) => labelIn(label, TODOMAN_LABELS);
 
 // src/doctor.ts
 var WORKFLOWS = ["process.yml", "summary.yml"];
@@ -32482,7 +32486,7 @@ function createGh(env) {
     },
     async labeledAt(n, label) {
       const rows = await octokit.paginate(api.issues.listEvents, { owner, repo, issue_number: n, per_page: 100 });
-      const hit = rows.filter((e) => e.event === "labeled" && "label" in e && e.label?.name === label).at(-1);
+      const hit = rows.filter((e) => e.event === "labeled" && "label" in e && e.label?.name.toLowerCase() === label.toLowerCase()).at(-1);
       return hit ? new Date(hit.created_at) : null;
     },
     async issuesSince(since) {
@@ -32558,13 +32562,13 @@ var TYPE_LABELS = ["task", "meeting", "tracking", "summary"];
 var STUCK_MS = 15 * 6e4;
 async function readDump(gh, n) {
   const [issue2, comments] = await Promise.all([gh.getIssue(n), gh.listComments(n)]);
-  const processingSince = issue2.labels.includes(PROCESSING) ? await gh.labeledAt(n, PROCESSING) : null;
+  const processingSince = hasLabel(issue2.labels, PROCESSING) ? await gh.labeledAt(n, PROCESSING) : null;
   return { issue: issue2, comments, processingSince };
 }
 function shouldProcess(d, owner, now) {
   const { issue: issue2 } = d;
-  if (issue2.state !== "open" || issue2.author !== owner || issue2.labels.some((l) => TYPE_LABELS.includes(l))) return false;
-  const states = issue2.labels.filter((l) => STATE_LABELS.includes(l));
+  if (issue2.state !== "open" || issue2.author !== owner || issue2.labels.some((l) => labelIn(l, TYPE_LABELS))) return false;
+  const states = issue2.labels.map((l) => l.toLowerCase()).filter((l) => STATE_LABELS.includes(l));
   if (states.length === 0) return true;
   if (states.includes(PROCESSING)) {
     const stuck = d.processingSince !== null && now.getTime() - d.processingSince.getTime() > STUCK_MS;
@@ -32580,7 +32584,7 @@ async function createdItems(gh, repo, d) {
     const src = [{ author: i.author, body: i.body }];
     const [ref] = parseRefMarkers(src);
     for (const m of parseItemMarkers(src).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? "item", title: i.title, url: i.url, ...m.start ? { start: m.start } : {}, ...ref ? { ref } : {} });
+      items.push({ key: m.key, type: i.labels.find((l) => labelIn(l, TYPE_LABELS))?.toLowerCase() ?? "item", title: i.title, url: i.url, ...m.start ? { start: m.start } : {}, ...ref ? { ref } : {} });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);
@@ -32588,9 +32592,9 @@ async function createdItems(gh, repo, d) {
 }
 var thread = (d, owner) => d.comments.filter((c) => c.author === owner || c.author === BOT);
 async function setState(gh, issue2, state) {
-  if (!issue2.labels.includes(state)) await gh.addLabel(issue2.number, state);
-  for (const l of issue2.labels.filter((x) => STATE_LABELS.includes(x) && x !== state)) await gh.removeLabel(issue2.number, l);
-  issue2.labels = [...issue2.labels.filter((x) => !STATE_LABELS.includes(x)), state];
+  if (!hasLabel(issue2.labels, state)) await gh.addLabel(issue2.number, state);
+  for (const l of issue2.labels.filter((x) => labelIn(x, STATE_LABELS) && x.toLowerCase() !== state)) await gh.removeLabel(issue2.number, l);
+  issue2.labels = [...issue2.labels.filter((x) => !labelIn(x, STATE_LABELS)), state];
 }
 
 // src/failure.ts
@@ -32805,9 +32809,8 @@ function nextKey(markers, dump) {
 // src/collect.ts
 var MAX_ISSUES = 300;
 var NEXT_MS = 7 * 864e5;
-var TODOMAN_LABELS = LABELS.map((l) => l.name);
-var isDump = (i, owner) => i.author === owner && (!i.labels.some((l) => TODOMAN_LABELS.includes(l)) || i.labels.some((l) => STATE_LABELS.includes(l)));
-var counts = (i, owner) => !isDump(i, owner) && !i.labels.includes("summary");
+var isDump = (i, owner) => i.author === owner && (!i.labels.some(isTodomanLabel) || i.labels.some((l) => labelIn(l, STATE_LABELS)));
+var counts = (i, owner) => !isDump(i, owner) && !hasLabel(i.labels, "summary");
 var startOf = (i) => parseItemMarkers([i]).find((m) => m.start)?.start;
 async function collect(gh, reader, owner, p) {
   const [updated, openTasks, meetings, openTracking] = await Promise.all([
@@ -32839,11 +32842,11 @@ async function collect(gh, reader, owner, p) {
   const tracked = [];
   for (const i of kept) {
     const start = startOf(i);
-    const meetingInPeriod = i.labels.includes("meeting") && start !== void 0 && inPeriod(start, p);
+    const meetingInPeriod = hasLabel(i.labels, "meeting") && start !== void 0 && inPeriod(start, p);
     const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
     const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
     issues.push({ ...i, comments, ...start ? { start } : {} });
-    if (!i.labels.includes("tracking")) continue;
+    if (!hasLabel(i.labels, "tracking")) continue;
     const ref = parseRefMarkers([i])[0];
     const r = ref ? parseRef(ref) : null;
     if (r) tracked.push({ issue: i.number, ref, activity: await reader.readExternalActivity(r, p) });
@@ -32921,7 +32924,7 @@ var EMPTY = "Nothing this week.";
 var NO_SUMMARY = "no summary added";
 var NO_NOTES = { done: [], meetings: [], tracked: [] };
 var dueOf = (i) => /^Due: (\d{4}-\d{2}-\d{2})$/m.exec(i.body)?.[1];
-var has = (i, label) => i.labels.includes(label);
+var has = (i, label) => hasLabel(i.labels, label);
 var texts = (i, from = () => true) => i.comments.filter((c) => from(c.author)).map((c) => c.body.replace(/<!--[\s\S]*?-->/g, "").trim()).filter(Boolean);
 var summaries = (i) => texts(i, (a) => a !== BOT);
 var active = (t, p) => !t.activity.access || t.activity.comments.length > 0 || t.activity.mergedPrs.length > 0 || t.activity.closedAt !== void 0 && inPeriod(t.activity.closedAt, p);
@@ -33104,7 +33107,6 @@ function resultComment(results, questions, state, read) {
 }
 
 // src/validate.ts
-var TODOMAN_LABELS2 = new Set(LABELS.map((l) => l.name));
 var YEAR = 365 * 864e5;
 var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
 var text = (v) => typeof v === "string" ? sanitize(v).trim() : "";
@@ -33119,7 +33121,7 @@ function task(raw, ctx) {
   const title = checkTitle(raw);
   if (typeof title !== "string") return title.fail;
   if (raw.due !== void 0 && !isDate(raw.due)) return "What is the due date (YYYY-MM-DD)?";
-  const labels = (names(raw.labels) ?? []).map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())).filter((l) => !!l && !TODOMAN_LABELS2.has(l) && !l.startsWith("repo:") && !l.startsWith("todoman:"));
+  const labels = (names(raw.labels) ?? []).map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())).filter((l) => !!l && !isTodomanLabel(l) && !l.startsWith("repo:") && !l.toLowerCase().startsWith("todoman:"));
   return { type: "task", title, body: text(raw.body), labels, ...raw.due ? { due: raw.due } : {} };
 }
 function meeting(raw, ctx, seen) {
@@ -33181,7 +33183,6 @@ function validate(output, ctx) {
 }
 
 // src/process.ts
-var TODOMAN_LABELS3 = new Set(LABELS.map((l) => l.name));
 function buildInput(d, owner, tz, now, people, labels, created) {
   return JSON.stringify({
     now: now.toISOString(),
@@ -33189,7 +33190,7 @@ function buildInput(d, owner, tz, now, people, labels, created) {
     dump: { title: d.issue.title, body: d.issue.body, at: d.issue.createdAt },
     thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? "Todoman" : "owner", at: c.createdAt, text: c.body.replace(/<!--[\s\S]*?-->/g, "").trim() })),
     people: people.map((p) => p.name),
-    labels: labels.filter((l) => !TODOMAN_LABELS3.has(l)),
+    labels: labels.filter((l) => !isTodomanLabel(l)),
     alreadyCreated: created.map((c) => ({ type: c.type, title: c.title }))
   });
 }
@@ -33208,7 +33209,7 @@ async function processDump(p) {
     p.log("Nothing to process");
     return;
   }
-  const answered = d.issue.labels.includes("needs-info");
+  const answered = hasLabel(d.issue.labels, "needs-info");
   await setState(p.gh, d.issue, PROCESSING);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
   const at = { step: STEPS.read };
@@ -33227,7 +33228,7 @@ async function processDump(p) {
 }
 async function failInterruptedRun(gh, n, log) {
   const issue2 = await gh.getIssue(n);
-  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
+  if (issue2.state !== "open" || !hasLabel(issue2.labels, PROCESSING)) {
     log("Nothing to mark failed");
     return;
   }

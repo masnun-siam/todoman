@@ -45,6 +45,7 @@ describe('createGh (process methods)', () => {
   it('labeledAt is the last time that label was added', async () => {
     expect(await gh.labeledAt(5, 'todoman:processing')).toEqual(new Date('2026-10-21T02:00:00Z'));
     expect(await gh.labeledAt(5, 'needs-info')).toBeNull();
+    expect(await gh.labeledAt(5, 'FAILED')).toEqual(new Date('2026-10-21T03:00:00Z')); // label names ignore case
   });
   it('removeLabel ignores a label that is already gone', async () => {
     await expect(gh.removeLabel(5, 'failed')).resolves.toBeUndefined();
