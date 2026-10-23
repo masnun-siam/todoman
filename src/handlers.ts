@@ -1,12 +1,16 @@
+import type { ExternalReader } from './external.js';
 import type { Issue, ProcessGh } from './github.js';
 import type { Calendar } from './google.js';
 import type { ValidItem } from './validate.js';
 import { meetingHandler } from './handlers/meeting.js';
 import { taskHandler } from './handlers/task.js';
+import { trackingHandler } from './handlers/tracking.js';
 
 export interface ItemContext {
   gh: ProcessGh;
   calendar: Calendar;
+  /** Reads other repos' items; built on first use, so a bad GH_READ_TOKENS fails only tracking items. */
+  external: () => ExternalReader;
   /** Data repo full name, `owner/repo`. */
   repo: string;
   owner: string;
@@ -31,5 +35,5 @@ export interface ItemHandler {
   create(item: ValidItem, ctx: ItemContext): Promise<Created>;
 }
 
-/** Registered handlers; tracking (#16) adds its own here. */
-export const HANDLERS: ItemHandler[] = [taskHandler, meetingHandler];
+/** Registered handlers, one per item type the code can create. */
+export const HANDLERS: ItemHandler[] = [taskHandler, meetingHandler, trackingHandler];

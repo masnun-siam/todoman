@@ -1,6 +1,7 @@
 import type { ClaudeRequest } from './claude.js';
 import { createdItems, PROCESSING, readDump, setState, shouldProcess, thread, type CreatedItem, type Dump } from './dump.js';
 import { CANCELLED, failDump, failureComment, failureMessage, STEPS, type Step } from './failure.js';
+import type { ExternalReader } from './external.js';
 import type { ProcessGh } from './github.js';
 import type { Calendar } from './google.js';
 import { HANDLERS, type ItemHandler } from './handlers.js';
@@ -18,6 +19,7 @@ import { validate, type Question } from './validate.js';
 export interface ProcessDeps {
   gh: ProcessGh;
   calendar: Calendar;
+  external: () => ExternalReader;
   /** Data repo full name, `owner/repo`. */
   repo: string;
   issue: number;
@@ -115,7 +117,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Prom
       continue;
     }
     try {
-      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
       results.push({ type: item.type, ok: false, title, reason: failureMessage(e) }); // fixed text: never an error body
     }

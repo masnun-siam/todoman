@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { ClaudeError } from '../src/claude.js';
 import { CANCELLED, failureComment, failureMessage, RETRY, STEPS } from '../src/failure.js';
+import { READ_TOKENS_ERROR } from '../src/external.js';
 import { GoogleError } from '../src/google.js';
 import { readMarker } from '../src/markers.js';
 
@@ -15,6 +16,7 @@ describe('failureMessage (FR-9)', () => {
     [new GoogleError('auth'), 'the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.'],
     [new GoogleError('failed'), 'Google Calendar request failed'],
     [Object.assign(new Error(`Bad credentials ${SECRET}`), { status: 401 }), 'a GitHub request failed'],
+    [new Error(READ_TOKENS_ERROR), 'GH_READ_TOKENS must be a JSON object'],
     [new Error(`boom ${SECRET}`), 'an unexpected error occurred'],
     [`raw ${SECRET}`, 'an unexpected error occurred'],
     [null, 'an unexpected error occurred'],

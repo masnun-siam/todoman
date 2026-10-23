@@ -28,13 +28,15 @@ export interface IssueComment {
 }
 
 /** The slice of GitHub that process mode needs; tests pass a stub. */
-export interface ProcessGh extends Pick<Gh, 'labelNames' | 'fileText'> {
+export interface ProcessGh extends Pick<Gh, 'labelNames' | 'fileText' | 'createLabel'> {
   getIssue(n: number): Promise<Issue>;
   listComments(n: number): Promise<IssueComment[]>;
   /** When `label` was last added to issue `n`, or null if it never was. */
   labeledAt(n: number, label: string): Promise<Date | null>;
   /** Issues (not PRs) created at or after `since` (ISO). */
   issuesSince(since: string): Promise<Issue[]>;
+  /** Open issues (not PRs) carrying `label`. */
+  openIssues(label: string): Promise<Issue[]>;
   addLabel(n: number, label: string): Promise<void>;
   /** A label that is already gone is not an error. */
   removeLabel(n: number, label: string): Promise<void>;
@@ -131,6 +133,10 @@ export function createGh(env: Env): Gh & ProcessGh & SummaryGh {
     async issuesLabelled(label, state) {
       const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state, labels: label, per_page: 100 });
       return rows.filter((i) => !i.pull_request).map(toDated);
+    },
+    async openIssues(label) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: 'open', labels: label, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toIssue);
     },
     async addLabel(n, label) {
       await api.issues.addLabels({ owner, repo, issue_number: n, labels: [label] });

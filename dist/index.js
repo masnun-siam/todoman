@@ -32116,6 +32116,110 @@ function getOctokit(token, options, ...additionalPlugins) {
   return new GitHubWithPlugins(getOctokitOptions(token, options));
 }
 
+// src/sanitize.ts
+var ZWSP = "\u200B";
+function sanitize(text2) {
+  let out = text2;
+  for (let prev = ""; prev !== out; ) {
+    prev = out;
+    out = out.replaceAll("<!--", "").replaceAll("-->", "");
+  }
+  return out.replace(/@(?=[A-Za-z0-9_])/g, `@${ZWSP}`);
+}
+
+// src/external.ts
+var OWNER = "[A-Za-z0-9-]+";
+var REPO = "[\\w.-]+";
+var URL_RE = new RegExp(`^https?://github\\.com/(${OWNER})/(${REPO})/(?:issues|pull)/(\\d+)(?:[/?#].*)?$`);
+var SHORT_RE = new RegExp(`^(${OWNER})/(${REPO})#(\\d+)$`);
+function parseRef(text2) {
+  const m = URL_RE.exec(text2.trim()) ?? SHORT_RE.exec(text2.trim());
+  return m ? { owner: m[1], repo: m[2], number: Number(m[3]) } : null;
+}
+var refString = (r) => `${r.owner}/${r.repo}#${r.number}`;
+var READ_TOKENS_ERROR = "GH_READ_TOKENS must be a JSON object mapping an owner to a token string";
+function parseReadTokens(raw) {
+  if (!raw) return /* @__PURE__ */ new Map();
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error(READ_TOKENS_ERROR);
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error(READ_TOKENS_ERROR);
+  const entries = Object.entries(parsed);
+  if (entries.some(([, t]) => typeof t !== "string" || !t)) throw new Error(READ_TOKENS_ERROR);
+  return new Map(entries.map(([o, t]) => [o.toLowerCase(), t]));
+}
+var stateOf = (i) => i.mergedAt ? "merged" : i.state === "open" ? "open" : "closed";
+var inPeriod = (iso, p) => {
+  const t = Date.parse(iso);
+  return t >= Date.parse(p.from) && t < Date.parse(p.to);
+};
+function createReader(env, clientFor = octokitClient) {
+  const tokens = parseReadTokens(env.GH_READ_TOKENS);
+  const clients = /* @__PURE__ */ new Map();
+  const client = (r) => {
+    const owner = r.owner.toLowerCase();
+    const token = tokens.get(owner);
+    if (!token) return void 0;
+    if (!clients.has(owner)) clients.set(owner, clientFor(token));
+    return clients.get(owner);
+  };
+  return {
+    async readExternal(r) {
+      const gh = client(r);
+      if (!gh) return { access: false };
+      try {
+        const i = await gh.issue(r);
+        return { access: true, title: sanitize(i.title), state: stateOf(i) };
+      } catch {
+        return { access: false };
+      }
+    },
+    async readExternalActivity(r, p) {
+      const gh = client(r);
+      if (!gh) return { access: false };
+      try {
+        const [i, comments, prs] = await Promise.all([gh.issue(r), gh.comments(r, p.from), gh.linkedPrs(r)]);
+        return {
+          access: true,
+          title: sanitize(i.title),
+          state: stateOf(i),
+          ...i.closedAt ? { closedAt: i.closedAt } : {},
+          comments: comments.filter((c) => inPeriod(c.createdAt, p)).map((c) => ({ ...c, body: sanitize(c.body) })),
+          mergedPrs: prs.filter((pr) => pr.mergedAt !== null && inPeriod(pr.mergedAt, p)).map((pr) => ({ ...pr, title: sanitize(pr.title) }))
+        };
+      } catch {
+        return { access: false };
+      }
+    }
+  };
+}
+function octokitClient(token) {
+  const octokit = getOctokit(token);
+  const api = octokit.rest.issues;
+  const at = (r) => ({ owner: r.owner, repo: r.repo, issue_number: r.number });
+  return {
+    async issue(r) {
+      const { data } = await api.get(at(r));
+      return { title: data.title, state: data.state, closedAt: data.closed_at, mergedAt: data.pull_request?.merged_at ?? null };
+    },
+    async comments(r, since) {
+      const rows = await octokit.paginate(api.listComments, { ...at(r), since, per_page: 100 });
+      return rows.map((c) => ({ author: c.user?.login ?? "", body: c.body ?? "", createdAt: c.created_at }));
+    },
+    async linkedPrs(r) {
+      const rows = await octokit.paginate(api.listEventsForTimeline, { ...at(r), per_page: 100 });
+      return rows.flatMap((e) => {
+        const src = "source" in e ? e.source?.issue : void 0;
+        if (e.event !== "cross-referenced" || !src?.pull_request) return [];
+        return [{ title: src.title, url: src.html_url, mergedAt: src.pull_request.merged_at ?? null }];
+      });
+    }
+  };
+}
+
 // src/github.ts
 var toIssue = (i) => ({
   number: i.number,
@@ -32176,6 +32280,10 @@ function createGh(env) {
     async issuesLabelled(label, state) {
       const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state, labels: label, per_page: 100 });
       return rows.filter((i) => !i.pull_request).map(toDated);
+    },
+    async openIssues(label) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: "open", labels: label, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toIssue);
     },
     async addLabel(n, label) {
       await api.issues.addLabels({ owner, repo, issue_number: n, labels: [label] });
@@ -32282,17 +32390,22 @@ function createCalendar(env, fetchFn = fetch) {
 
 // src/markers.ts
 var BOT = "github-actions[bot]";
-var REPO = "[\\w.-]+/[\\w.-]+";
-var REF = `${REPO}#\\d+`;
+var REPO2 = "[\\w.-]+/[\\w.-]+";
+var REF = `${REPO2}#\\d+`;
 var TS = "[\\w:.+-]+";
 var itemMarker = (m) => `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ""}${m.start ? ` start=${m.start}` : ""} -->`;
+var refMarker = (ref) => `<!-- todoman:ref ${ref} -->`;
 var readMarker = (id) => `<!-- todoman:read id=${id} -->`;
 var botBodies = (items) => items.filter((i) => i.author === BOT).map((i) => i.body);
 function parseItemMarkers(items) {
-  const re = new RegExp(`<!-- todoman:item repo=(${REPO}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))?(?: start=(${TS}))? -->`, "g");
+  const re = new RegExp(`<!-- todoman:item repo=(${REPO2}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))?(?: start=(${TS}))? -->`, "g");
   return botBodies(items).flatMap(
     (b) => [...b.matchAll(re)].map(([, repo, dump, key, ref, start]) => ({ repo, dump: Number(dump), key, ...ref ? { ref } : {}, ...start ? { start } : {} }))
   );
+}
+function parseRefMarkers(items) {
+  const re = new RegExp(`<!-- todoman:ref (${REF}) -->`, "g");
+  return botBodies(items).flatMap((b) => [...b.matchAll(re)].map((m) => m[1]));
 }
 function lastRead(items) {
   return Math.max(0, ...botBodies(items).flatMap((b) => [...b.matchAll(/<!-- todoman:read id=(\d+) -->/g)].map((m) => Number(m[1]))));
@@ -32324,8 +32437,10 @@ async function createdItems(gh, repo, d) {
   const mine = (m) => m.repo === repo && m.dump === d.issue.number;
   const items = [];
   for (const i of await gh.issuesSince(d.issue.createdAt)) {
-    for (const m of parseItemMarkers([{ author: i.author, body: i.body }]).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? "item", title: i.title, url: i.url, ...m.start ? { start: m.start } : {} });
+    const src = [{ author: i.author, body: i.body }];
+    const [ref] = parseRefMarkers(src);
+    for (const m of parseItemMarkers(src).filter(mine)) {
+      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? "item", title: i.title, url: i.url, ...m.start ? { start: m.start } : {}, ...ref ? { ref } : {} });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);
@@ -32361,6 +32476,7 @@ var GOOGLE = {
 function failureMessage(e) {
   if (e instanceof ClaudeError) return CLAUDE[e.kind];
   if (e instanceof GoogleError) return GOOGLE[e.kind];
+  if (e instanceof Error && e.message === READ_TOKENS_ERROR) return `${READ_TOKENS_ERROR}; fix the secret.`;
   if (typeof e?.status === "number") {
     return "a GitHub request failed. If it keeps failing, check githubstatus.com and that the workflow has `issues: write`.";
   }
@@ -32489,8 +32605,63 @@ var taskHandler = {
   }
 };
 
+// src/handlers/tracking.ts
+var LABEL_MAX = 50;
+var TITLE_MAX = 256;
+var sameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
+async function existing(ctx, ref) {
+  const open2 = await ctx.gh.openIssues("tracking");
+  return open2.filter((i) => parseRefMarkers([{ author: i.author, body: i.body }]).some((r) => sameRef(r, ref))).sort((a, b) => a.number - b.number)[0];
+}
+async function addNote(ctx, issue2, ref, note) {
+  const posted = parseItemMarkers(await ctx.gh.listComments(issue2.number)).some(
+    (m) => m.repo === ctx.repo && m.dump === ctx.dump.number && m.ref !== void 0 && sameRef(m.ref, ref)
+  );
+  if (!posted) {
+    const marker = itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, ref });
+    await ctx.gh.comment(issue2.number, [note, `Source dump: ${ctx.dump.url}`, marker].join("\n\n"));
+  }
+  return { title: issue2.title, url: issue2.url, details: [`added note to existing #${issue2.number}`] };
+}
+async function repoLabel(ctx, r) {
+  const name = `repo:${r.owner}/${r.repo}`.slice(0, LABEL_MAX);
+  const found = (await ctx.gh.labelNames()).find((l) => l.toLowerCase() === name.toLowerCase());
+  if (found) return [found];
+  try {
+    await ctx.gh.createLabel(name, "c5def5", "Todoman: tracks items in this repo");
+    return [name];
+  } catch {
+    return [];
+  }
+}
+var trackingHandler = {
+  type: "tracking",
+  async create(item, ctx) {
+    if (item.type !== "tracking") throw new Error("not a tracking item");
+    const r = parseRef(item.ref);
+    if (!r) throw new Error("not a reference");
+    const ref = refString(r);
+    const open2 = await existing(ctx, ref);
+    if (open2) return addNote(ctx, open2, ref, item.note);
+    const ext = await ctx.external().readExternal(r);
+    const title = (ext.access ? `${ref}: ${ext.title}` : ref).slice(0, TITLE_MAX);
+    const body = [
+      `Tracks https://github.com/${r.owner}/${r.repo}/issues/${r.number}`,
+      ext.access ? `State: ${ext.state}` : "",
+      item.note,
+      `Source dump: ${ctx.dump.url}`,
+      refMarker(ref),
+      itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key })
+    ].filter(Boolean).join("\n\n");
+    const labels = ["tracking", ...await repoLabel(ctx, r)];
+    const issue2 = await ctx.gh.createIssue({ title, body, labels, assignees: [ctx.owner] });
+    const access2 = ext.access ? [] : [`access missing: no read token for ${r.owner} can read ${ref}, so only the reference is shown`];
+    return { title: issue2.title, url: issue2.url, details: access2 };
+  }
+};
+
 // src/handlers.ts
-var HANDLERS = [taskHandler, meetingHandler];
+var HANDLERS = [taskHandler, meetingHandler, trackingHandler];
 
 // src/keys.ts
 function nextKey(markers, dump) {
@@ -32504,6 +32675,10 @@ function isCreated(item, created) {
   if (item.type === "meeting") {
     const at = Date.parse(item.start);
     return created.some((c) => c.type === "meeting" && c.start !== void 0 && Date.parse(c.start) === at);
+  }
+  if (item.type === "tracking") {
+    const ref = item.ref.toLowerCase();
+    return created.some((c) => c.type === "tracking" && c.ref?.toLowerCase() === ref);
   }
   if (item.type !== "task") return false;
   const title = normTitle(item.title);
@@ -32588,17 +32763,6 @@ var PARSER_SCHEMA = {
     }
   }
 };
-
-// src/sanitize.ts
-var ZWSP = "\u200B";
-function sanitize(text2) {
-  let out = text2;
-  for (let prev = ""; prev !== out; ) {
-    prev = out;
-    out = out.replaceAll("<!--", "").replaceAll("-->", "");
-  }
-  return out.replace(/@(?=[A-Za-z0-9_])/g, `@${ZWSP}`);
-}
 
 // src/validate.ts
 var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
@@ -32747,7 +32911,7 @@ async function parseAndCreate(p, d, at) {
       continue;
     }
     try {
-      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
       results.push({ type: item.type, ok: false, title, reason: failureMessage(e) });
     }
@@ -32780,9 +32944,11 @@ var handlers = {
     if (env["INPUT_ON-FAILURE"] === "true") return failInterruptedRun(gh, issue2, info);
     const { owner, tz } = loadConfig(env);
     let bin;
+    let reader;
     return processDump({
       gh,
       calendar: createCalendar(env),
+      external: () => reader ??= createReader(env),
       repo: env.GITHUB_REPOSITORY ?? "",
       issue: issue2,
       owner,
