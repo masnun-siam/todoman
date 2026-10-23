@@ -32965,6 +32965,15 @@ function buildInput(d, owner, tz, now, people, labels, created) {
     alreadyCreated: created.map((c) => ({ type: c.type, title: c.title }))
   });
 }
+function parseRequest(input) {
+  return {
+    model: MODELS.parse,
+    system: PARSE_SYSTEM,
+    schema: PARSER_SCHEMA,
+    input,
+    validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
+  };
+}
 async function processDump(p) {
   const d = await readDump(p.gh, p.issue);
   if (!shouldProcess(d, p.owner, p.now())) {
@@ -33005,13 +33014,7 @@ async function parseAndCreate(p, d, at) {
   const people = peopleText !== null && parsePeople(peopleText) || [];
   const now = p.now();
   at.step = STEPS.parse;
-  const output = await p.claude({
-    model: MODELS.parse,
-    system: PARSE_SYSTEM,
-    schema: PARSER_SCHEMA,
-    input: buildInput(d, p.owner, p.tz, now, people, labels, created),
-    validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
-  });
+  const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
   at.step = STEPS.create;

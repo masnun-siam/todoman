@@ -46,6 +46,17 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
   });
 }
 
+/** The Claude call that parses a dump; the parser evals (eval/run.ts) send the same request. */
+export function parseRequest(input: string): ClaudeRequest {
+  return {
+    model: MODELS.parse,
+    system: PARSE_SYSTEM,
+    schema: PARSER_SCHEMA,
+    input,
+    validate: (v) => typeof v === 'object' && v !== null && Array.isArray((v as { items?: unknown }).items),
+  };
+}
+
 /**
  * process mode (FR-2, FR-6, FR-7, FR-8, FR-9): gate on the live dump, parse, create items, post one result comment,
  * set the end state. A step that throws leaves the dump `failed` with a fixed message naming the step, then rethrows.
@@ -95,13 +106,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Prom
   const people = (peopleText !== null && parsePeople(peopleText)) || [];
   const now = p.now();
   at.step = STEPS.parse;
-  const output = await p.claude({
-    model: MODELS.parse,
-    system: PARSE_SYSTEM,
-    schema: PARSER_SCHEMA,
-    input: buildInput(d, p.owner, p.tz, now, people, labels, created),
-    validate: (v) => typeof v === 'object' && v !== null && Array.isArray((v as { items?: unknown }).items),
-  });
+  const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join('\n');
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
 
