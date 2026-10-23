@@ -26,7 +26,7 @@ async function runOnce(f: Fixture): Promise<string[]> {
   const input = buildInput({ issue, comments: [], processingSince: null }, OWNER, TZ, now, people, labels, []);
   try {
     const output = await runClaude(parseRequest(input), { token: token as string, bin });
-    return check(f, validate(output, { now, text: `${f.dump.title}\n${f.dump.body}`, labels, people }));
+    return check(f, validate(output, { now, tz: TZ, text: `${f.dump.title}\n${f.dump.body}`, labels, people }));
   } catch (e) {
     return [e instanceof Error ? e.message : 'run failed'];
   }

@@ -60,12 +60,17 @@ describe('run', () => {
       'mode: summary',
     ]);
   });
-  it.each([['2026-10-01', '2026-11-01'], ['2026-10-12', ''], ['2026-10-18', '2026-10-12'], ['monday', 'friday']])(
+  it.each([['2026-10-01', '2026-11-01'], ['2026-10-12', ''], ['2026-10-18', '2026-10-12'], ['monday', 'friday'], ['2999-01-01', '2999-01-02']])(
     'refuses a dispatched period %s..%s',
     async (from, to) => {
       await expect(run('summary', dispatch(from, to))).rejects.toThrow(/^summary: /);
     },
   );
+  it('refuses a dispatched period that has not started with the periodProblem message', async () => {
+    await expect(run('summary', dispatch('2999-01-01', '2999-01-02'))).rejects.toThrow(
+      'summary: That period has not started yet; which period should the summary cover? Give from and to as YYYY-MM-DD.',
+    );
+  });
   it('on-failure true marks the run failed instead of processing', async () => {
     await run('process', { ...mine, 'INPUT_ON-FAILURE': 'true' });
     await run('process', { ...mine, 'INPUT_ON-FAILURE': 'false' });

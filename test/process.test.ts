@@ -344,6 +344,13 @@ describe('processDump questions (FR-7)', () => {
     expect(writes).toContain('+needs-info#5');
     expect(writes).not.toContain('close#5');
   });
+  it('a summary for next week asks which period and creates no summary', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ title: 'worklog for next week' }));
+    await run(gh, { items: [{ type: 'summary', from: '2026-10-26', to: '2026-10-30' }], questions: [] });
+    expect(comments(writes)[0]).toContain('That period has not started yet; which period should the summary cover?');
+    expect(writes).toContain('+needs-info#5');
+    expect(writes.filter((w) => w.startsWith('create:'))).toEqual([]);
+  });
   it('"asdf" goes to needs-info with the PRD wording', async () => {
     const { gh, writes } = fakeGh(dumpIssue({ title: 'asdf' }));
     await run(gh, { items: [], questions: [] });

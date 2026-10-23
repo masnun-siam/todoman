@@ -113,7 +113,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }, answe
   at.step = STEPS.parse;
   const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join('\n');
-  const { items, questions } = validate(output, { now, text: ownText, labels, people });
+  const { items, questions } = validate(output, { now, tz: p.tz, text: ownText, labels, people });
 
   at.step = STEPS.create;
   const results: ItemResult[] = [];

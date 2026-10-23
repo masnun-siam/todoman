@@ -32394,6 +32394,48 @@ async function runDoctor(gh, log, checks = baseChecks, actionPath = process.env.
   if (failed) throw new Error(`doctor: ${failed} check(s) failed`);
 }
 
+// src/dates.ts
+var pad = (n) => String(n).padStart(2, "0");
+var DAY = 864e5;
+function localParts(at, tz) {
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", weekday: "short" });
+  const p = Object.fromEntries(f.formatToParts(at).map((x) => [x.type, x.value]));
+  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday) };
+}
+function offsetMinutes(at, tz) {
+  const l = localParts(at, tz);
+  return (Date.UTC(l.y, l.m - 1, l.d, l.h, l.mi) - Math.floor(at.getTime() / 6e4) * 6e4) / 6e4;
+}
+var fmtOffset = (min) => `${min < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(min) / 60))}:${pad(Math.abs(min) % 60)}`;
+function localDate(at, tz) {
+  const l = localParts(at, tz);
+  return `${l.y}-${pad(l.m)}-${pad(l.d)}`;
+}
+function localTime(at, tz) {
+  const l = localParts(at, tz);
+  return `${pad(l.h)}:${pad(l.mi)}`;
+}
+function addDays(date, n) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+}
+function atLocal(date, time, tz) {
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, mi] = time.split(":").map(Number);
+  const guess = Date.UTC(y, m - 1, d, h, mi);
+  const first = offsetMinutes(new Date(guess), tz);
+  const off = offsetMinutes(new Date(guess - first * 6e4), tz);
+  return `${date}T${time}:00${fmtOffset(off)}`;
+}
+function isDate(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s;
+}
+var daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
+function parseWithOffset(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
+  const t = Date.parse(s);
+  return Number.isNaN(t) || !isDate(s.slice(0, 10)) ? null : new Date(t);
+}
+
 // src/github.ts
 var toIssue = (i) => ({
   number: i.number,
@@ -32597,48 +32639,6 @@ function failureComment(step, message, read) {
 async function failDump(gh, issue2, body) {
   await setState(gh, issue2, "failed");
   await gh.comment(issue2.number, body);
-}
-
-// src/dates.ts
-var pad = (n) => String(n).padStart(2, "0");
-var DAY = 864e5;
-function localParts(at, tz) {
-  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", weekday: "short" });
-  const p = Object.fromEntries(f.formatToParts(at).map((x) => [x.type, x.value]));
-  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday) };
-}
-function offsetMinutes(at, tz) {
-  const l = localParts(at, tz);
-  return (Date.UTC(l.y, l.m - 1, l.d, l.h, l.mi) - Math.floor(at.getTime() / 6e4) * 6e4) / 6e4;
-}
-var fmtOffset = (min) => `${min < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(min) / 60))}:${pad(Math.abs(min) % 60)}`;
-function localDate(at, tz) {
-  const l = localParts(at, tz);
-  return `${l.y}-${pad(l.m)}-${pad(l.d)}`;
-}
-function localTime(at, tz) {
-  const l = localParts(at, tz);
-  return `${pad(l.h)}:${pad(l.mi)}`;
-}
-function addDays(date, n) {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
-}
-function atLocal(date, time, tz) {
-  const [y, m, d] = date.split("-").map(Number);
-  const [h, mi] = time.split(":").map(Number);
-  const guess = Date.UTC(y, m - 1, d, h, mi);
-  const first = offsetMinutes(new Date(guess), tz);
-  const off = offsetMinutes(new Date(guess - first * 6e4), tz);
-  return `${date}T${time}:00${fmtOffset(off)}`;
-}
-function isDate(s) {
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s;
-}
-var daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
-function parseWithOffset(s) {
-  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
-  const t = Date.parse(s);
-  return Number.isNaN(t) || !isDate(s.slice(0, 10)) ? null : new Date(t);
 }
 
 // src/eventId.ts
@@ -33153,14 +33153,15 @@ function tracking(raw, ctx) {
   if (!note2) return `What should the note on ${ref} say?`;
   return { type: "tracking", ref, note: note2 };
 }
-function periodProblem(from, to) {
+function periodProblem(from, to, today) {
   if (!isDate(from) || !isDate(to) || from > to) return "Which period should the summary cover (dates)?";
+  if (from > today) return "That period has not started yet; which period should the summary cover?";
   if (daysBetween(from, to) + 1 > 31) return "A summary covers at most 31 days; which period?";
   return null;
 }
-function summary2(raw) {
+function summary2(raw, ctx) {
   const { from, to } = raw;
-  return periodProblem(from, to) ?? { type: "summary", from, to };
+  return periodProblem(from, to, localDate(ctx.now, ctx.tz)) ?? { type: "summary", from, to };
 }
 function validate(output, ctx) {
   const o = isObj(output) ? output : {};
@@ -33172,7 +33173,7 @@ function validate(output, ctx) {
   raw.forEach((r, i) => {
     const about = isObj(r) && typeof r.title === "string" ? text(r.title) : `item ${i + 1}`;
     const type = isObj(r) ? r.type : void 0;
-    const res = !isObj(r) ? "What should this item be?" : type === "task" ? task(r, ctx) : type === "meeting" ? meeting(r, ctx, seen) : type === "tracking" ? tracking(r, ctx) : type === "summary" ? summary2(r) : "What kind of item is this: a task, meeting, tracking note or summary?";
+    const res = !isObj(r) ? "What should this item be?" : type === "task" ? task(r, ctx) : type === "meeting" ? meeting(r, ctx, seen) : type === "tracking" ? tracking(r, ctx) : type === "summary" ? summary2(r, ctx) : "What kind of item is this: a task, meeting, tracking note or summary?";
     if (typeof res === "string") questions.push({ about: about || `item ${i + 1}`, question: res });
     else items.push(res);
   });
@@ -33244,7 +33245,7 @@ async function parseAndCreate(p, d, at, answered) {
   at.step = STEPS.parse;
   const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
-  const { items, questions } = validate(output, { now, text: ownText, labels, people });
+  const { items, questions } = validate(output, { now, tz: p.tz, text: ownText, labels, people });
   at.step = STEPS.create;
   const results = [];
   for (const item of items.filter((i) => !isCreated(i, created))) {
@@ -33324,7 +33325,7 @@ var handlers = {
   summary: async (env) => {
     const { from, to } = eventDates(env);
     if (!from && !to) return weeklySummary(summaryDeps(env));
-    const problem = periodProblem(from, to);
+    const problem = periodProblem(from, to, localDate(/* @__PURE__ */ new Date(), loadConfig(env).tz));
     if (problem) throw new Error(`summary: ${problem} Give from and to as YYYY-MM-DD.`);
     const { issue: issue2, reused } = await onDemandSummary(summaryDeps(env), from, to);
     info(`${reused ? "Existing summary" : "Summary"}: ${issue2.url}`);
