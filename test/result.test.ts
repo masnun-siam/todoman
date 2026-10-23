@@ -22,6 +22,10 @@ describe('resultComment table (FR-2)', () => {
     expect(c).toContain('[a \\| b \\[x\\]](https://github.com/o/r/1)');
   });
 
+  it('escapes a trailing backslash so the link stays intact', () => {
+    expect(resultComment([made('dir\\', [])], [], 'processed', 0)).toContain('[dir\\\\](https://github.com/o/r/1)');
+  });
+
   it('makes every cell a single line and shows a backtick label without a code span', () => {
     const c = resultComment([made('two\nlines', ['we`ird', 'p|q'], ['x\r\ny'])], [], 'processed', 0);
     expect(c).toContain('| task | [two lines](https://github.com/o/r/1) | we`ird `p\\|q` | x y |');
