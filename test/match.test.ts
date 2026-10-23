@@ -22,6 +22,12 @@ describe('isCreated (FR-8 matching)', () => {
     expect(isCreated(task('Buy milk'), [{ ...made[0], type: 'meeting' }])).toBe(false);
     expect(isCreated({ type: 'summary', from: '2026-10-01', to: '2026-10-07' }, made)).toBe(false);
   });
+  it('matches tracking by reference, case-insensitively', () => {
+    const tracked = [{ key: 'i2', type: 'tracking', title: 'o/r#85: Fix', url: 'u', ref: 'o/r#85' }];
+    expect(isCreated({ type: 'tracking', ref: 'O/R#85', note: 'n' }, tracked)).toBe(true);
+    expect(isCreated({ type: 'tracking', ref: 'o/r#8', note: 'n' }, tracked)).toBe(false);
+    expect(isCreated({ type: 'tracking', ref: 'o/r#85', note: 'n' }, made)).toBe(false);
+  });
   it('matches nothing when nothing was created', () => {
     expect(isCreated(task('Buy milk'), [])).toBe(false);
   });

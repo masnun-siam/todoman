@@ -1,5 +1,6 @@
 import { ClaudeError } from './claude.js';
 import { setState } from './dump.js';
+import { READ_TOKENS_ERROR } from './external.js';
 import type { Issue, ProcessGh } from './github.js';
 import { GoogleError } from './google.js';
 import { readMarker } from './markers.js';
@@ -32,6 +33,7 @@ const GOOGLE: Record<GoogleError['kind'], string> = {
 export function failureMessage(e: unknown): string {
   if (e instanceof ClaudeError) return CLAUDE[e.kind];
   if (e instanceof GoogleError) return GOOGLE[e.kind];
+  if (e instanceof Error && e.message === READ_TOKENS_ERROR) return `${READ_TOKENS_ERROR}; fix the secret.`; // fixed text, never the value
   if (typeof (e as { status?: unknown } | null)?.status === 'number') {
     return 'a GitHub request failed. If it keeps failing, check githubstatus.com and that the workflow has `issues: write`.';
   }

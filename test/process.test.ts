@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { ClaudeError } from '../src/claude.js';
 import { shouldProcess, type Dump } from '../src/dump.js';
+import type { ExternalReader } from '../src/external.js';
 import { RETRY } from '../src/failure.js';
 import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
 import { GoogleError } from '../src/google.js';
 import type { ItemHandler } from '../src/handlers.js';
 import { taskHandler } from '../src/handlers/task.js';
+import { trackingHandler } from '../src/handlers/tracking.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
 import { failInterruptedRun, processDump } from '../src/process.js';
 import { endState } from '../src/result.js';
@@ -14,6 +16,7 @@ const OWNER = 'masnun-siam';
 const REPO = 'masnun-siam/todo-sandbox';
 const NOW = new Date('2026-10-21T06:00:00Z');
 const MIN = 60_000;
+const noAccess = (): ExternalReader => ({ readExternal: async () => ({ access: false }), readExternalActivity: async () => ({ access: false }) });
 
 const dumpIssue = (over: Partial<Issue> = {}): Issue => ({
   number: 5, title: 'buy milk', body: '', url: 'https://github.com/x/5', author: OWNER, state: 'open', labels: [], createdAt: '2026-10-21T05:00:00Z', ...over,
@@ -35,6 +38,8 @@ function fakeGh(issue: Issue, comments: IssueComment[] = [], extra: { since?: Da
     removeLabel: async (n, l) => void writes.push(`-${l}#${n}`),
     comment: async (n, b) => void writes.push(`comment#${n}:${b}`),
     closeCompleted: async (n) => void writes.push(`close#${n}`),
+    openIssues: async (l) => issues.filter((i) => i.state === 'open' && i.labels.includes(l)),
+    createLabel: async (name) => void writes.push(`label:${name}`),
     createIssue: async ({ title, body, labels }) => {
       const n = 100 + issues.length;
       const made = dumpIssue({ number: n, url: `https://github.com/x/${n}`, author: BOT, title, body, labels });
@@ -52,7 +57,7 @@ const broken: ItemHandler = { type: 'task', create: async () => { throw new Erro
 async function run(gh: ProcessGh, output: unknown, handlers = [task]) {
   const inputs: string[] = [];
   const logs: string[] = [];
-  await processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
+  await processDump({ gh, external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
   return { inputs, logs };
 }
 const milk = { items: [{ type: 'task', title: 'Buy milk', due: '2026-10-22' }], questions: [] };
@@ -210,6 +215,36 @@ describe('processDump', () => {
   });
 });
 
+describe('processDump tracking (FR-2, FR-5)', () => {
+  const tracking = { type: 'tracking', ref: 'masnun-siam/meeting-manager#85', note: 'waiting on review' };
+  it('a task and a tracking reference give two issues and one result comment', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ body: 'call the bank, and review masnun-siam/meeting-manager#85' }));
+    await run(gh, { items: [{ type: 'task', title: 'Call the bank' }, tracking], questions: [] }, [taskHandler, trackingHandler]);
+    expect(writes.filter((w) => w.startsWith('create:'))).toEqual(['create:Call the bank', 'create:masnun-siam/meeting-manager#85']);
+    expect(comments(writes)).toHaveLength(1);
+    expect(comments(writes)[0]).toContain('- tracking: [masnun-siam/meeting-manager#85](https://github.com/x/101) — access missing');
+  });
+  it('dumping the same reference twice gives one tracking issue and a note on it', async () => {
+    const issues: Issue[] = [];
+    const body = 'https://github.com/masnun-siam/meeting-manager/issues/85 waiting on review';
+    const first = fakeGh(dumpIssue({ body }), [], { issues });
+    await run(first.gh, { items: [tracking], questions: [] }, [trackingHandler]);
+    const second = fakeGh(dumpIssue({ number: 6, body, createdAt: '2026-10-21T05:50:00Z' }), [], { issues });
+    await processDump({ gh: second.gh, external: noAccess, repo: REPO, issue: 6, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [trackingHandler], log: () => undefined, claude: async () => ({ items: [tracking], questions: [] }) });
+    expect(issues).toHaveLength(1);
+    expect(second.writes.filter((w) => w.startsWith('create:'))).toEqual([]);
+    expect(second.writes.filter((w) => w.startsWith('comment#100:'))).toHaveLength(1);
+    expect(comments(second.writes).find((c) => c.startsWith('comment#6:'))).toContain('added note to existing #100');
+  });
+  it('a re-run after the tracking issue was created skips it', async () => {
+    const issues: Issue[] = [];
+    const { gh, writes } = fakeGh(dumpIssue({ body: 'masnun-siam/meeting-manager#85' }), [], { issues });
+    await run(gh, { items: [tracking], questions: [] }, [trackingHandler]);
+    await run(gh, { items: [tracking], questions: [] }, [trackingHandler]);
+    expect(writes.filter((w) => w.startsWith('create:'))).toHaveLength(1);
+  });
+});
+
 describe('failures (FR-9)', () => {
   const SECRET = 'ghp_SECRET123';
   it.each([
@@ -221,7 +256,7 @@ describe('failures (FR-9)', () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     if ('gh' in fail) gh.labelNames = async () => { throw fail.gh; };
     const claude = async () => { if ('claude' in fail) throw fail.claude; return milk; };
-    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
+    await expect(processDump({ gh, external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
     const [c, ...rest] = comments(writes);
     expect(rest).toEqual([]);
     expect(c).toContain(`Todoman failed while ${want}`);
@@ -232,7 +267,7 @@ describe('failures (FR-9)', () => {
   it('a failure comment that cannot be posted still leaves the dump failed, not processing', async () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     gh.comment = async () => { throw new Error('down'); };
-    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
+    await expect(processDump({ gh, external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
     expect(writes).toEqual(['+todoman:processing#5', '+failed#5', '-todoman:processing#5']);
   });
   it('a revoked Google token fails the item with how to renew it, keeping the items created', async () => {

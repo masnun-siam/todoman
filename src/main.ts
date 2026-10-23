@@ -3,6 +3,7 @@ import { loadConfig, type Env } from './config.js';
 import { installClaude, runClaude } from './claude.js';
 import { eventActor, eventIssue, isOwner } from './gate.js';
 import { runDoctor } from './doctor.js';
+import { createReader, type ExternalReader } from './external.js';
 import { createGh } from './github.js';
 import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
@@ -18,8 +19,10 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
     if (env['INPUT_ON-FAILURE'] === 'true') return failInterruptedRun(gh, issue, core.info); // the workflow's failure/cancel step
     const { owner, tz } = loadConfig(env);
     let bin: string | undefined; // installed only once the gate lets a run reach Claude
+    let reader: ExternalReader | undefined; // built on first tracking item, so a bad GH_READ_TOKENS fails only that item
     return processDump({
       gh,
+      external: () => (reader ??= createReader(env)),
       repo: env.GITHUB_REPOSITORY ?? '',
       issue,
       owner,
