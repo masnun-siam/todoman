@@ -75,6 +75,11 @@ describe('onDemandSummary (FR-11)', () => {
     expect((await onDemandSummary(d, '2026-10-22', '2026-10-22')).reused).toBe(false);
     expect(created).toHaveLength(1);
   });
+  it('refuses a period that has not started yet', async () => {
+    const { d, created } = deps();
+    await expect(onDemandSummary(d, '2026-10-24', '2026-10-24')).rejects.toThrow('has not started');
+    expect(created).toHaveLength(0);
+  });
   it('never reuses a summary for today, whose period ends at the run time', async () => {
     const { d, created } = deps([summary(7, '2026-10-23T09:00:00Z', '2026-10-22T18:00:00.000Z', '2026-10-23T09:00:00.000Z')]);
     expect((await onDemandSummary(d, '2026-10-23', '2026-10-23')).reused).toBe(false);

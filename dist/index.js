@@ -33027,6 +33027,7 @@ function onDemandPeriod(from, to, tz, now) {
 var onDemandTitle = (from, to) => `Summary: ${from} \u2013 ${to}`;
 async function onDemandSummary(d, from, to, extra = "") {
   const p = onDemandPeriod(from, to, d.tz, d.now());
+  if (p.from >= p.to) throw new Error("summary: the period has not started yet");
   const existing2 = (await d.gh.issuesLabelled("summary", "all")).find(
     (i) => Date.parse(i.createdAt) >= Date.parse(p.to) && parseSummaryMarkers([i]).some((m) => m.from === p.from && m.to === p.to)
   );

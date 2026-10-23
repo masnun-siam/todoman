@@ -56,6 +56,7 @@ export const onDemandTitle = (from: string, to: string): string => `Summary: ${f
  */
 export async function onDemandSummary(d: SummaryDeps, from: string, to: string, extra = ''): Promise<{ issue: Issue; reused: boolean }> {
   const p = onDemandPeriod(from, to, d.tz, d.now());
+  if (p.from >= p.to) throw new Error('summary: the period has not started yet');
   const existing = (await d.gh.issuesLabelled('summary', 'all')).find(
     (i) => Date.parse(i.createdAt) >= Date.parse(p.to) && parseSummaryMarkers([i]).some((m) => m.from === p.from && m.to === p.to),
   );
