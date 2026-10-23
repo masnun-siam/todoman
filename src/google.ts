@@ -16,6 +16,8 @@ export type EventResult = { status: 'created' | 'existing'; meetLink?: string; e
 export interface Calendar {
   /** Inserts the event; when its id already exists, reads it back instead and never recreates it. */
   insertEvent(e: NewEvent): Promise<EventResult>;
+  /** Replaces the description only; sends no update to invitees. */
+  describeEvent(id: string, description: string): Promise<void>;
 }
 
 export type GoogleErrorKind = 'auth' | 'failed';
@@ -103,6 +105,11 @@ export function createCalendar(env: Env, fetchFn: typeof fetch = fetch): Calenda
       } // id already exists: a retry, or Siam deleted it in Calendar
       if (!res.ok) throw new GoogleError('failed');
       return result('created', await json(res));
+    },
+    async describeEvent(id, description) {
+      const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=none`, { method: 'PATCH', body: JSON.stringify({ description }) });
+      await res.body?.cancel();
+      if (!res.ok) throw new GoogleError('failed');
     },
   };
 }

@@ -20,6 +20,8 @@ export interface CreatedItem {
   type: string;
   title: string;
   url: string;
+  /** Meeting start (UTC ISO) from the item marker. */
+  start?: string;
   /** A tracking issue's reference, `owner/repo#n`. */
   ref?: string;
 }
@@ -57,7 +59,7 @@ export async function createdItems(gh: ProcessGh, repo: string, d: Dump): Promis
     const src = [{ author: i.author, body: i.body }];
     const [ref] = parseRefMarkers(src);
     for (const m of parseItemMarkers(src).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? 'item', title: i.title, url: i.url, ...(ref ? { ref } : {}) });
+      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? 'item', title: i.title, url: i.url, ...(m.start ? { start: m.start } : {}), ...(ref ? { ref } : {}) });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);

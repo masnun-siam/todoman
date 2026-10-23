@@ -5,6 +5,7 @@ import { eventActor, eventIssue, isOwner } from './gate.js';
 import { runDoctor } from './doctor.js';
 import { createReader, type ExternalReader } from './external.js';
 import { createGh } from './github.js';
+import { createCalendar } from './google.js';
 import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
 
@@ -22,6 +23,7 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
     let reader: ExternalReader | undefined; // built on first tracking item, so a bad GH_READ_TOKENS fails only that item
     return processDump({
       gh,
+      calendar: createCalendar(env),
       external: () => (reader ??= createReader(env)),
       repo: env.GITHUB_REPOSITORY ?? '',
       issue,

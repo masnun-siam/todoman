@@ -1873,14 +1873,14 @@ var require_request = __commonJS({
         if (statusCode !== null) {
           this.#publishUpgradeHeaders(statusCode, headers, statusText);
         }
-        const result = this[kHandler].onUpgrade(statusCode, headers, socket);
+        const result2 = this[kHandler].onUpgrade(statusCode, headers, socket);
         if (!this.aborted) {
           this.completed = true;
           if (statusCode !== null) {
             this.#publishUpgradeTrailers();
           }
         }
-        return result;
+        return result2;
       }
       /**
        * @param {number} statusCode
@@ -3361,12 +3361,12 @@ var require_data_url = __commonJS({
       return serialized;
     }
     function collectASequenceOfCodePoints(condition, input, position) {
-      let result = "";
+      let result2 = "";
       while (position.position < input.length && condition(input[position.position])) {
-        result += input[position.position];
+        result2 += input[position.position];
         position.position++;
       }
-      return result;
+      return result2;
     }
     function collectASequenceOfCodePointsFast(char, input, position) {
       const idx = input.indexOf(char, position.position);
@@ -3588,16 +3588,16 @@ var require_data_url = __commonJS({
       if ((2 << 15) - 1 > length) {
         return String.fromCharCode.apply(null, input);
       }
-      let result = "";
+      let result2 = "";
       let i = 0;
       let addition = (2 << 15) - 1;
       while (i < length) {
         if (i + addition > length) {
           addition = length - i;
         }
-        result += String.fromCharCode.apply(null, input.subarray(i, i += addition));
+        result2 += String.fromCharCode.apply(null, input.subarray(i, i += addition));
       }
-      return result;
+      return result2;
     }
     function minimizeSupportedMimeType(mimeType) {
       switch (mimeType.essence) {
@@ -3846,15 +3846,15 @@ var require_webidl = __commonJS({
             message: `${argument} ("${webidl.util.Type(O)}") is not an Object.`
           });
         }
-        const result = {};
+        const result2 = {};
         if (!types.isProxy(O)) {
           const keys2 = [...Object.getOwnPropertyNames(O), ...Object.getOwnPropertySymbols(O)];
           for (const key of keys2) {
             const typedKey = keyConverter(key, prefix, argument);
             const typedValue = valueConverter(O[key], prefix, argument);
-            result[typedKey] = typedValue;
+            result2[typedKey] = typedValue;
           }
-          return result;
+          return result2;
         }
         const keys = Reflect.ownKeys(O);
         for (const key of keys) {
@@ -3862,10 +3862,10 @@ var require_webidl = __commonJS({
           if (desc?.enumerable) {
             const typedKey = keyConverter(key, prefix, argument);
             const typedValue = valueConverter(O[key], prefix, argument);
-            result[typedKey] = typedValue;
+            result2[typedKey] = typedValue;
           }
         }
-        return result;
+        return result2;
       };
     };
     webidl.interfaceConverter = function(i) {
@@ -4395,7 +4395,7 @@ var require_util2 = __commonJS({
     }
     var parseHashWithOptions = /(?<algo>sha256|sha384|sha512)-((?<hash>[A-Za-z0-9+/]+|[A-Za-z0-9_-]+)={0,2}(?:\s|$)( +[!-~]*)?)?/i;
     function parseMetadata(metadata) {
-      const result = [];
+      const result2 = [];
       let empty = true;
       for (const token of metadata.split(" ")) {
         empty = false;
@@ -4405,13 +4405,13 @@ var require_util2 = __commonJS({
         }
         const algorithm = parsedToken.groups.algo.toLowerCase();
         if (supportedHashes.includes(algorithm)) {
-          result.push(parsedToken.groups);
+          result2.push(parsedToken.groups);
         }
       }
       if (empty === true) {
         return "no metadata";
       }
-      return result;
+      return result2;
     }
     function getStrongestMetadata(metadataList) {
       let algorithm = metadataList[0].algo;
@@ -4488,12 +4488,12 @@ var require_util2 = __commonJS({
       return normalizedMethodRecordsBase[method.toLowerCase()] ?? method;
     }
     function serializeJavascriptValueToJSONString(value) {
-      const result = JSON.stringify(value);
-      if (result === void 0) {
+      const result2 = JSON.stringify(value);
+      if (result2 === void 0) {
         throw new TypeError("Value is not JSON serializable");
       }
-      assert(typeof result === "string");
-      return result;
+      assert(typeof result2 === "string");
+      return result2;
     }
     var esIteratorPrototype = Object.getPrototypeOf(Object.getPrototypeOf([][Symbol.iterator]()));
     function createIterator(name, kInternalIterator, keyIndex = 0, valueIndex = 1) {
@@ -4531,20 +4531,20 @@ var require_util2 = __commonJS({
           }
           const { [keyIndex]: key, [valueIndex]: value } = values[index];
           this.#index = index + 1;
-          let result;
+          let result2;
           switch (this.#kind) {
             case "key":
-              result = key;
+              result2 = key;
               break;
             case "value":
-              result = value;
+              result2 = value;
               break;
             case "key+value":
-              result = [key, value];
+              result2 = [key, value];
               break;
           }
           return {
-            value: result,
+            value: result2,
             done: false
           };
         }
@@ -5235,11 +5235,11 @@ var require_formdata_parser = __commonJS({
           return "failure";
         }
         position.position += 2;
-        const result = parseMultipartFormDataHeaders(input, position);
-        if (result === "failure") {
+        const result2 = parseMultipartFormDataHeaders(input, position);
+        if (result2 === "failure") {
           return "failure";
         }
-        let { name, filename, contentType, encoding } = result;
+        let { name, filename, contentType, encoding } = result2;
         position.position += 2;
         let body;
         {
@@ -6915,17 +6915,17 @@ var require_client_h2 = __commonJS({
       }
     } = http2;
     function parseH2Headers(headers) {
-      const result = [];
+      const result2 = [];
       for (const [name, value] of Object.entries(headers)) {
         if (Array.isArray(value)) {
           for (const subvalue of value) {
-            result.push(Buffer.from(name), Buffer.from(subvalue));
+            result2.push(Buffer.from(name), Buffer.from(subvalue));
           }
         } else {
-          result.push(Buffer.from(name), Buffer.from(value));
+          result2.push(Buffer.from(name), Buffer.from(value));
         }
       }
-      return result;
+      return result2;
     }
     function parseH2ResponseHeaders(headers) {
       const { [HTTP2_HEADER_STATUS]: _statusCode, ...realHeaders } = headers;
@@ -8541,11 +8541,11 @@ var require_balanced_pool = __commonJS({
         return this;
       }
       _updateBalancedPoolStats() {
-        let result = 0;
+        let result2 = 0;
         for (let i = 0; i < this[kClients].length; i++) {
-          result = getGreatestCommonDivisor(this[kClients][i][kWeight], result);
+          result2 = getGreatestCommonDivisor(this[kClients][i][kWeight], result2);
         }
-        this[kGreatestCommonDivisor] = result;
+        this[kGreatestCommonDivisor] = result2;
       }
       removeUpstream(upstream) {
         const upstreamOrigin = parseOrigin(upstream).origin;
@@ -10816,20 +10816,20 @@ var require_mock_utils = __commonJS({
     }
     function generateKeyValues(data) {
       const keys = Object.keys(data);
-      const result = [];
+      const result2 = [];
       for (let i = 0; i < keys.length; ++i) {
         const key = keys[i];
         const value = data[key];
         const name = Buffer.from(`${key}`);
         if (Array.isArray(value)) {
           for (let j = 0; j < value.length; ++j) {
-            result.push(name, Buffer.from(`${value[j]}`));
+            result2.push(name, Buffer.from(`${value[j]}`));
           }
         } else {
-          result.push(name, Buffer.from(`${value}`));
+          result2.push(name, Buffer.from(`${value}`));
         }
       }
-      return result;
+      return result2;
     }
     function getStatusText(statusCode) {
       return STATUS_CODES[statusCode] || "unknown";
@@ -14996,11 +14996,11 @@ var require_util4 = __commonJS({
               queueMicrotask(() => {
                 fr[kState] = "done";
                 try {
-                  const result = packageData(bytes, type, blob.type, encodingName);
+                  const result2 = packageData(bytes, type, blob.type, encodingName);
                   if (fr[kAborted]) {
                     return;
                   }
-                  fr[kResult] = result;
+                  fr[kResult] = result2;
                   fireAProgressEvent("load", fr);
                 } catch (error2) {
                   fr[kError] = error2;
@@ -17303,10 +17303,10 @@ var require_connection = __commonJS({
       const wasClean = ws[kSentClose] === sentCloseFrameState.SENT && ws[kReceivedClose];
       let code = 1005;
       let reason = "";
-      const result = ws[kByteParser].closingInfo;
-      if (result && !result.error) {
-        code = result.code ?? 1005;
-        reason = result.reason;
+      const result2 = ws[kByteParser].closingInfo;
+      if (result2 && !result2.error) {
+        code = result2.code ?? 1005;
+        reason = result2.reason;
       } else if (!ws[kReceivedClose]) {
         code = 1006;
       }
@@ -26593,12 +26593,12 @@ var require_lib = __commonJS({
       };
       return function(mod) {
         if (mod && mod.__esModule) return mod;
-        var result = {};
+        var result2 = {};
         if (mod != null) {
-          for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result, mod, k[i]);
+          for (var k = ownKeys(mod), i = 0; i < k.length; i++) if (k[i] !== "default") __createBinding(result2, mod, k[i]);
         }
-        __setModuleDefault(result, mod);
-        return result;
+        __setModuleDefault(result2, mod);
+        return result2;
       };
     })();
     var __awaiter3 = exports && exports.__awaiter || function(thisArg, _arguments, P, generator) {
@@ -26622,8 +26622,8 @@ var require_lib = __commonJS({
             reject(e);
           }
         }
-        function step(result) {
-          result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+        function step(result2) {
+          result2.done ? resolve(result2.value) : adopt(result2.value).then(fulfilled, rejected);
         }
         step((generator = generator.apply(thisArg, _arguments || [])).next());
       });
@@ -27404,8 +27404,8 @@ var __awaiter = function(thisArg, _arguments, P, generator) {
         reject(e);
       }
     }
-    function step(result) {
-      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    function step(result2) {
+      result2.done ? resolve(result2.value) : adopt(result2.value).then(fulfilled, rejected);
     }
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
@@ -28026,8 +28026,8 @@ var __awaiter2 = function(thisArg, _arguments, P, generator) {
         reject(e);
       }
     }
-    function step(result) {
-      result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected);
+    function step(result2) {
+      result2.done ? resolve(result2.value) : adopt(result2.value).then(fulfilled, rejected);
     }
     step((generator = generator.apply(thisArg, _arguments || [])).next());
   });
@@ -28119,12 +28119,12 @@ function addHook(state, kind, name, hook2) {
   }
   if (kind === "after") {
     hook2 = (method, options) => {
-      let result;
+      let result2;
       return Promise.resolve().then(method.bind(null, options)).then((result_) => {
-        result = result_;
-        return orig(result, options);
+        result2 = result_;
+        return orig(result2, options);
       }).then(() => {
-        return result;
+        return result2;
       });
     };
   }
@@ -28221,16 +28221,16 @@ function isPlainObject(value) {
   return typeof Ctor === "function" && Ctor instanceof Ctor && Function.prototype.call(Ctor) === Function.prototype.call(value);
 }
 function mergeDeep(defaults2, options) {
-  const result = Object.assign({}, defaults2);
+  const result2 = Object.assign({}, defaults2);
   Object.keys(options).forEach((key) => {
     if (isPlainObject(options[key])) {
-      if (!(key in defaults2)) Object.assign(result, { [key]: options[key] });
-      else result[key] = mergeDeep(defaults2[key], options[key]);
+      if (!(key in defaults2)) Object.assign(result2, { [key]: options[key] });
+      else result2[key] = mergeDeep(defaults2[key], options[key]);
     } else {
-      Object.assign(result, { [key]: options[key] });
+      Object.assign(result2, { [key]: options[key] });
     }
   });
-  return result;
+  return result2;
 }
 function removeUndefinedProperties(obj) {
   for (const key in obj) {
@@ -28286,13 +28286,13 @@ function extractUrlVariableNames(url) {
   return matches.map(removeNonChars).reduce((a, b) => a.concat(b), []);
 }
 function omit(object, keysToOmit) {
-  const result = { __proto__: null };
+  const result2 = { __proto__: null };
   for (const key of Object.keys(object)) {
     if (keysToOmit.indexOf(key) === -1) {
-      result[key] = object[key];
+      result2[key] = object[key];
     }
   }
-  return result;
+  return result2;
 }
 function encodeReserved(str2) {
   return str2.split(/(%[0-9A-Fa-f]{2})/g).map(function(part) {
@@ -28322,28 +28322,28 @@ function isKeyOperator(operator) {
   return operator === ";" || operator === "&" || operator === "?";
 }
 function getValues(context3, operator, key, modifier) {
-  var value = context3[key], result = [];
+  var value = context3[key], result2 = [];
   if (isDefined(value) && value !== "") {
     if (typeof value === "string" || typeof value === "number" || typeof value === "bigint" || typeof value === "boolean") {
       value = value.toString();
       if (modifier && modifier !== "*") {
         value = value.substring(0, parseInt(modifier, 10));
       }
-      result.push(
+      result2.push(
         encodeValue(operator, value, isKeyOperator(operator) ? key : "")
       );
     } else {
       if (modifier === "*") {
         if (Array.isArray(value)) {
           value.filter(isDefined).forEach(function(value2) {
-            result.push(
+            result2.push(
               encodeValue(operator, value2, isKeyOperator(operator) ? key : "")
             );
           });
         } else {
           Object.keys(value).forEach(function(k) {
             if (isDefined(value[k])) {
-              result.push(encodeValue(operator, value[k], k));
+              result2.push(encodeValue(operator, value[k], k));
             }
           });
         }
@@ -28362,24 +28362,24 @@ function getValues(context3, operator, key, modifier) {
           });
         }
         if (isKeyOperator(operator)) {
-          result.push(encodeUnreserved(key) + "=" + tmp.join(","));
+          result2.push(encodeUnreserved(key) + "=" + tmp.join(","));
         } else if (tmp.length !== 0) {
-          result.push(tmp.join(","));
+          result2.push(tmp.join(","));
         }
       }
     }
   } else {
     if (operator === ";") {
       if (isDefined(value)) {
-        result.push(encodeUnreserved(key));
+        result2.push(encodeUnreserved(key));
       }
     } else if (value === "" && (operator === "&" || operator === "?")) {
-      result.push(encodeUnreserved(key) + "=");
+      result2.push(encodeUnreserved(key) + "=");
     } else if (value === "") {
-      result.push("");
+      result2.push("");
     }
   }
-  return result;
+  return result2;
 }
 function parseUrl(template) {
   return {
@@ -28676,14 +28676,14 @@ function parseParameters(header, type, index, len, stopFlags) {
   return { type, index, parameters };
 }
 function unescapeQuotedPairs(str2, start, end) {
-  let result = "";
+  let result2 = "";
   for (let index = start; index < end; index++) {
     if (str2.charCodeAt(index) === BSLASH) {
-      result += str2.slice(start, index);
+      result2 += str2.slice(start, index);
       start = ++index;
     }
   }
-  return result + str2.slice(start, end);
+  return result2 + str2.slice(start, end);
 }
 
 // node_modules/json-with-bigint/json-with-bigint.js
@@ -28908,12 +28908,12 @@ var isContextSourceSupported = () => {
     return featureCache.get(parseFingerprint);
   }
   try {
-    const result = JSON.parse(
+    const result2 = JSON.parse(
       "1",
       (_, __, context3) => !!context3?.source && context3.source === "1"
     );
-    featureCache.set(parseFingerprint, result);
-    return result;
+    featureCache.set(parseFingerprint, result2);
+    return result2;
   } catch {
     featureCache.set(parseFingerprint, false);
     return false;
@@ -29298,16 +29298,16 @@ function graphql(request2, query, options) {
   const parsedOptions = typeof query === "string" ? Object.assign({ query }, options) : query;
   const requestOptions = Object.keys(
     parsedOptions
-  ).reduce((result, key) => {
+  ).reduce((result2, key) => {
     if (NON_VARIABLE_OPTIONS.includes(key)) {
-      result[key] = parsedOptions[key];
-      return result;
+      result2[key] = parsedOptions[key];
+      return result2;
     }
-    if (!result.variables) {
-      result.variables = {};
+    if (!result2.variables) {
+      result2.variables = {};
     }
-    result.variables[key] = parsedOptions[key];
-    return result;
+    result2.variables[key] = parsedOptions[key];
+    return result2;
   }, {});
   const baseUrl2 = parsedOptions.baseUrl || request2.endpoint.DEFAULTS.baseUrl;
   if (GHES_V3_SUFFIX_REGEX.test(baseUrl2)) {
@@ -32056,8 +32056,8 @@ function paginate(octokit, route, parameters, mapFn) {
   );
 }
 function gather(octokit, results, iterator2, mapFn) {
-  return iterator2.next().then((result) => {
-    if (result.done) {
+  return iterator2.next().then((result2) => {
+    if (result2.done) {
       return results;
     }
     let earlyExit = false;
@@ -32065,7 +32065,7 @@ function gather(octokit, results, iterator2, mapFn) {
       earlyExit = true;
     }
     results = results.concat(
-      mapFn ? mapFn(result.value, done) : result.value.data
+      mapFn ? mapFn(result2.value, done) : result2.value.data
     );
     if (earlyExit) {
       return results;
@@ -32298,18 +32298,100 @@ function createGh(env) {
   };
 }
 
+// src/google.ts
+var GoogleError = class extends Error {
+  constructor(kind) {
+    super({
+      auth: "Google authorization failed; renew GOOGLE_REFRESH_TOKEN",
+      failed: "Google Calendar request failed"
+    }[kind]);
+    this.kind = kind;
+  }
+  kind;
+};
+var TOKEN_URL = "https://oauth2.googleapis.com/token";
+var EVENTS_URL = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
+var TIMEOUT_MS = 3e4;
+async function refreshAccessToken(env, fetchFn = fetch) {
+  const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, GOOGLE_REFRESH_TOKEN: refresh } = env;
+  if (!id || !secret || !refresh) throw new GoogleError("auth");
+  const res = await fetchFn(TOKEN_URL, {
+    method: "POST",
+    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refresh, grant_type: "refresh_token" }),
+    signal: AbortSignal.timeout(TIMEOUT_MS)
+  }).catch(() => {
+    throw new GoogleError("failed");
+  });
+  if (res.status === 400 || res.status === 401) throw new GoogleError("auth");
+  if (!res.ok) throw new GoogleError("failed");
+  const token = (await res.json().catch(() => ({}))).access_token;
+  if (typeof token !== "string" || !token) throw new GoogleError("failed");
+  return token;
+}
+function result(status2, ev) {
+  if (ev.status === "cancelled") return { status: "deleted" };
+  if (!ev.htmlLink) throw new GoogleError("failed");
+  const meetLink = ev.hangoutLink ?? ev.conferenceData?.entryPoints?.find((p) => p.entryPointType === "video")?.uri;
+  return { status: status2, meetLink, eventLink: ev.htmlLink };
+}
+function createCalendar(env, fetchFn = fetch) {
+  let token;
+  async function call(url, init = {}) {
+    token ??= refreshAccessToken(env, fetchFn);
+    const headers = { authorization: `Bearer ${await token}`, "content-type": "application/json" };
+    const res = await fetchFn(url, { ...init, headers, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => {
+      throw new GoogleError("failed");
+    });
+    if (res.status === 401) throw new GoogleError("auth");
+    return res;
+  }
+  const json = async (res) => await res.json().catch(() => ({}));
+  async function getEvent(id) {
+    const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}`);
+    if (res.status === 404 || res.status === 410) return { status: "deleted" };
+    if (!res.ok) throw new GoogleError("failed");
+    return result("existing", await json(res));
+  }
+  return {
+    async insertEvent(e) {
+      const body = {
+        id: e.id,
+        summary: e.title,
+        description: e.description,
+        start: { dateTime: e.start, timeZone: e.timeZone },
+        end: { dateTime: e.end, timeZone: e.timeZone },
+        attendees: e.invitees.map((email) => ({ email })),
+        conferenceData: { createRequest: { requestId: e.id, conferenceSolutionKey: { type: "hangoutsMeet" } } }
+      };
+      const res = await call(`${EVENTS_URL}?conferenceDataVersion=1&sendUpdates=all`, { method: "POST", body: JSON.stringify(body) });
+      if (res.status === 409) {
+        await res.body?.cancel();
+        return getEvent(e.id);
+      }
+      if (!res.ok) throw new GoogleError("failed");
+      return result("created", await json(res));
+    },
+    async describeEvent(id, description) {
+      const res = await call(`${EVENTS_URL}/${encodeURIComponent(id)}?sendUpdates=none`, { method: "PATCH", body: JSON.stringify({ description }) });
+      await res.body?.cancel();
+      if (!res.ok) throw new GoogleError("failed");
+    }
+  };
+}
+
 // src/markers.ts
 var BOT = "github-actions[bot]";
 var REPO2 = "[\\w.-]+/[\\w.-]+";
 var REF = `${REPO2}#\\d+`;
-var itemMarker = (m) => `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ""} -->`;
+var TS = "[\\w:.+-]+";
+var itemMarker = (m) => `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ""}${m.start ? ` start=${m.start}` : ""} -->`;
 var refMarker = (ref) => `<!-- todoman:ref ${ref} -->`;
 var readMarker = (id) => `<!-- todoman:read id=${id} -->`;
 var botBodies = (items) => items.filter((i) => i.author === BOT).map((i) => i.body);
 function parseItemMarkers(items) {
-  const re = new RegExp(`<!-- todoman:item repo=(${REPO2}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))? -->`, "g");
+  const re = new RegExp(`<!-- todoman:item repo=(${REPO2}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))?(?: start=(${TS}))? -->`, "g");
   return botBodies(items).flatMap(
-    (b) => [...b.matchAll(re)].map(([, repo, dump, key, ref]) => ({ repo, dump: Number(dump), key, ...ref ? { ref } : {} }))
+    (b) => [...b.matchAll(re)].map(([, repo, dump, key, ref, start]) => ({ repo, dump: Number(dump), key, ...ref ? { ref } : {}, ...start ? { start } : {} }))
   );
 }
 function parseRefMarkers(items) {
@@ -32349,7 +32431,7 @@ async function createdItems(gh, repo, d) {
     const src = [{ author: i.author, body: i.body }];
     const [ref] = parseRefMarkers(src);
     for (const m of parseItemMarkers(src).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? "item", title: i.title, url: i.url, ...ref ? { ref } : {} });
+      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? "item", title: i.title, url: i.url, ...m.start ? { start: m.start } : {}, ...ref ? { ref } : {} });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);
@@ -32361,18 +32443,6 @@ async function setState(gh, issue2, state) {
   for (const l of issue2.labels.filter((x) => STATE_LABELS.includes(x) && x !== state)) await gh.removeLabel(issue2.number, l);
   issue2.labels = [...issue2.labels.filter((x) => !STATE_LABELS.includes(x)), state];
 }
-
-// src/google.ts
-var GoogleError = class extends Error {
-  constructor(kind) {
-    super({
-      auth: "Google authorization failed; renew GOOGLE_REFRESH_TOKEN",
-      failed: "Google Calendar request failed"
-    }[kind]);
-    this.kind = kind;
-  }
-  kind;
-};
 
 // src/failure.ts
 var STEPS = {
@@ -32412,6 +32482,107 @@ async function failDump(gh, issue2, body) {
   await setState(gh, issue2, "failed");
   await gh.comment(issue2.number, body);
 }
+
+// src/dates.ts
+var pad = (n) => String(n).padStart(2, "0");
+var DAY = 864e5;
+function localParts(at, tz) {
+  const f = new Intl.DateTimeFormat("en-US", { timeZone: tz, hourCycle: "h23", year: "numeric", month: "numeric", day: "numeric", hour: "numeric", minute: "numeric", weekday: "short" });
+  const p = Object.fromEntries(f.formatToParts(at).map((x) => [x.type, x.value]));
+  return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday) };
+}
+function localDate(at, tz) {
+  const l = localParts(at, tz);
+  return `${l.y}-${pad(l.m)}-${pad(l.d)}`;
+}
+function localTime(at, tz) {
+  const l = localParts(at, tz);
+  return `${pad(l.h)}:${pad(l.mi)}`;
+}
+function addDays(date, n) {
+  return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+}
+function isDate(s) {
+  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s;
+}
+var daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
+function parseWithOffset(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
+  const t = Date.parse(s);
+  return Number.isNaN(t) || !isDate(s.slice(0, 10)) ? null : new Date(t);
+}
+
+// src/eventId.ts
+import { createHash } from "node:crypto";
+var BASE32HEX = "0123456789abcdefghijklmnopqrstuv";
+function base32hex(bytes) {
+  let out = "";
+  let bits = 0;
+  let acc = 0;
+  for (const b of bytes) {
+    acc = acc << 8 | b;
+    bits += 8;
+    while (bits >= 5) {
+      bits -= 5;
+      out += BASE32HEX[acc >> bits & 31];
+    }
+  }
+  if (bits) out += BASE32HEX[acc << 5 - bits & 31];
+  return out;
+}
+function eventId(repoFullName, dump, start) {
+  const utc = new Date(start).toISOString();
+  return base32hex(createHash("sha256").update(`${repoFullName}
+${dump}
+${utc}`).digest());
+}
+
+// src/handlers/meeting.ts
+var SUMMARY_PROMPT = "Add the meeting summary as a comment";
+var meetingHandler = {
+  type: "meeting",
+  async create(item, ctx) {
+    if (item.type !== "meeting") throw new Error("not a meeting");
+    const start = new Date(item.start);
+    const end = new Date(start.getTime() + item.durationMinutes * 6e4);
+    const id = eventId(ctx.repo, ctx.dump.number, item.start);
+    const ev = await ctx.calendar.insertEvent({
+      id,
+      title: item.title,
+      start: item.start,
+      end: end.toISOString(),
+      timeZone: ctx.tz,
+      invitees: item.invitees.map((p) => p.email),
+      description: item.agenda
+    });
+    const title = `Meeting: ${item.title}`;
+    if (ev.status === "deleted") return { title, details: ["the calendar event was deleted"] };
+    const weekday = new Intl.DateTimeFormat("en-US", { timeZone: ctx.tz, weekday: "short" }).format(start);
+    const date = `${weekday} ${localDate(start, ctx.tz)}`;
+    const time = `${localTime(start, ctx.tz)}\u2013${localTime(end, ctx.tz)} ${ctx.tz}`;
+    const duration = `${item.durationMinutes} minutes`;
+    const invited = item.invitees.map((p) => p.name).join(", ") || "nobody";
+    const body = [
+      `Date: ${date}`,
+      `Time: ${time}`,
+      `Duration: ${duration}`,
+      `Attendees: ${invited}`,
+      ...item.skipped.map((s) => `Not invited: ${s}`),
+      `Meet: ${ev.meetLink ?? "not ready yet; open the calendar event"}`,
+      `Calendar event: ${ev.eventLink}`,
+      item.agenda && `Agenda: ${item.agenda}`,
+      `Source dump: ${ctx.dump.url}`,
+      itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, start: start.toISOString() }),
+      SUMMARY_PROMPT
+    ].filter(Boolean).join("\n\n");
+    const issue2 = await ctx.gh.createIssue({ title, body, labels: ["meeting"], assignees: [ctx.owner] });
+    const details = [`${date} ${time}`, duration, `invited: ${invited}`, ...item.skipped];
+    await ctx.calendar.describeEvent(id, [item.agenda, `Meeting issue: ${issue2.url}`].filter(Boolean).join("\n\n")).catch(() => {
+      details.push("the calendar event does not link this issue");
+    });
+    return { title: issue2.title, url: issue2.url, details };
+  }
+};
 
 // src/handlers/task.ts
 var taskHandler = {
@@ -32480,7 +32651,7 @@ var trackingHandler = {
 };
 
 // src/handlers.ts
-var HANDLERS = [taskHandler, trackingHandler];
+var HANDLERS = [taskHandler, meetingHandler, trackingHandler];
 
 // src/keys.ts
 function nextKey(markers, dump) {
@@ -32491,6 +32662,10 @@ function nextKey(markers, dump) {
 // src/match.ts
 var normTitle = (t) => t.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
 function isCreated(item, created) {
+  if (item.type === "meeting") {
+    const at = Date.parse(item.start);
+    return created.some((c) => c.type === "meeting" && c.start !== void 0 && Date.parse(c.start) === at);
+  }
   if (item.type === "tracking") {
     const ref = item.ref.toLowerCase();
     return created.some((c) => c.type === "tracking" && c.ref?.toLowerCase() === ref);
@@ -32523,7 +32698,8 @@ function endState(results, questions) {
 function line(r) {
   if (!r.ok) return `- ${r.type}: ${r.title} \u2014 not created: ${r.reason}`;
   const details = r.created.details.length ? ` \u2014 ${r.created.details.join("; ")}` : "";
-  return `- ${r.type}: [${r.created.title}](${r.created.url})${details}`;
+  const title = r.created.url ? `[${r.created.title}](${r.created.url})` : r.created.title;
+  return `- ${r.type}: ${title}${details}`;
 }
 function resultComment(results, questions, state, read) {
   const parts = [];
@@ -32578,21 +32754,6 @@ var PARSER_SCHEMA = {
   }
 };
 
-// src/dates.ts
-var DAY = 864e5;
-function addDays(date, n) {
-  return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
-}
-function isDate(s) {
-  return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s;
-}
-var daysBetween = (a, b) => Math.round((Date.parse(b) - Date.parse(a)) / DAY);
-function parseWithOffset(s) {
-  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/.test(s)) return null;
-  const t = Date.parse(s);
-  return Number.isNaN(t) || !isDate(s.slice(0, 10)) ? null : new Date(t);
-}
-
 // src/validate.ts
 var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 var YEAR = 365 * 864e5;
@@ -32619,7 +32780,7 @@ function meeting(raw, ctx, seen) {
   if (!at) return "When is the meeting (date, time and timezone)?";
   if (at.getTime() <= ctx.now.getTime()) return "That meeting time is in the past; when should it be?";
   if (at.getTime() > ctx.now.getTime() + YEAR) return "That meeting is more than a year away; when should it be?";
-  const d = raw.durationMinutes;
+  const d = raw.durationMinutes ?? 30;
   if (typeof d !== "number" || !Number.isInteger(d) || d < 5 || d > 480) return "How long is the meeting (5 to 480 minutes)?";
   const attendees = names(raw.attendees);
   if (!attendees) return "Who should be invited (names only)?";
@@ -32740,7 +32901,7 @@ async function parseAndCreate(p, d, at) {
       continue;
     }
     try {
-      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
       results.push({ type: item.type, ok: false, title, reason: failureMessage(e) });
     }
@@ -32776,6 +32937,7 @@ var handlers = {
     let reader;
     return processDump({
       gh,
+      calendar: createCalendar(env),
       external: () => reader ??= createReader(env),
       repo: env.GITHUB_REPOSITORY ?? "",
       issue: issue2,

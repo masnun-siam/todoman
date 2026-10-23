@@ -37,7 +37,7 @@ function setup(o: { open?: Issue[]; comments?: IssueComment[]; ext?: ExternalIte
     readExternalActivity: async () => ({ access: false as const }),
   });
   const dump = issue({ number: 5, url: 'https://github.com/o/r/issues/5', author: 'masnun-siam', labels: [] });
-  const ctx: ItemContext = { gh, external, repo: 'o/r', owner: 'masnun-siam', tz: 'Asia/Dhaka', dump, key: 'i2' };
+  const ctx: ItemContext = { gh, calendar: {} as ItemContext['calendar'], external, repo: 'o/r', owner: 'masnun-siam', tz: 'Asia/Dhaka', dump, key: 'i2' };
   return { ctx, created, comments, labels, reads };
 }
 
