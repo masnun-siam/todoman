@@ -19,7 +19,7 @@ const codes = (labels: string[]): string => labels.map((l) => (l.includes('`') ?
 
 function row(r: ItemResult): string {
   if (!r.ok) {
-    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join('; ');
+    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join(' ');
     return `| ${cell(r.type)} | ${cell(r.title)} | — | ${cell(details)} |`;
   }
   const c = r.created;

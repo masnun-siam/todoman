@@ -4,7 +4,7 @@ import { ItemError } from '../failure.js';
 import type { ItemHandler } from '../handlers.js';
 import { itemMarker } from '../markers.js';
 
-const EVENT_EXISTS = 'the calendar event exists and invites were sent';
+const EVENT_EXISTS = 'The calendar event exists and invites were sent.';
 export const SUMMARY_PROMPT = 'Add the meeting summary as a comment';
 
 /**

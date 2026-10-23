@@ -37,9 +37,9 @@ describe('resultComment table (FR-2)', () => {
   });
 
   it('shows a failed item as plain title with the step, and the event note', () => {
-    const r: ItemResult = { type: 'meeting', ok: false, title: 'Sync', reason: 'failed while creating items: boom', note: 'the calendar event exists and invites were sent' };
+    const r: ItemResult = { type: 'meeting', ok: false, title: 'Sync', reason: 'failed while creating items: boom.', note: 'The calendar event exists and invites were sent.' };
     expect(resultComment([r], [], 'failed', 0)).toContain(
-      '| meeting | Sync | — | not created: failed while creating items: boom; the calendar event exists and invites were sent |',
+      '| meeting | Sync | — | not created: failed while creating items: boom. The calendar event exists and invites were sent. |',
     );
   });
 
