@@ -32,7 +32,6 @@ export interface ProcessDeps {
   handlers?: ItemHandler[];
 }
 
-
 /** The JSON Claude reads: dump, thread with timestamps, clock, people, labels and items already created. */
 export function buildInput(d: Dump, owner: string, tz: string, now: Date, people: Person[], labels: string[], created: CreatedItem[]): string {
   return JSON.stringify({
