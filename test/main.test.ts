@@ -7,7 +7,10 @@ import { run } from '../src/main.js';
 
 vi.mock('@actions/core');
 vi.mock('../src/github.js', () => ({ createGh: () => ({}) }));
-vi.mock('../src/process.js', () => ({ processDump: async (p: { log: (l: string) => void; issue: number }) => p.log(`mode: process #${p.issue}`) }));
+vi.mock('../src/process.js', () => ({
+  processDump: async (p: { log: (l: string) => void; issue: number }) => p.log(`mode: process #${p.issue}`),
+  failInterruptedRun: async (_gh: unknown, n: number, log: (l: string) => void) => log(`on-failure #${n}`),
+}));
 vi.mock('../src/doctor.js', () => ({ runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
 function event(login: string): string {
@@ -41,6 +44,11 @@ describe('run', () => {
     await run('summary', on);
     expect(core.info).toHaveBeenCalledWith('mode: process #5');
     expect(core.info).toHaveBeenCalledWith('mode: summary');
+  });
+  it('on-failure true marks the run failed instead of processing', async () => {
+    await run('process', { ...mine, 'INPUT_ON-FAILURE': 'true' });
+    await run('process', { ...mine, 'INPUT_ON-FAILURE': 'false' });
+    expect(vi.mocked(core.info).mock.calls.map((c) => c[0])).toEqual(['on-failure #5', 'mode: process #5']);
   });
   it('ignores a foreign author before reading any secret', async () => {
     await run('process', { ...on, GITHUB_EVENT_PATH: event('mallory'), CLAUDE_CODE_OAUTH_TOKEN: 's' });

@@ -13607,7 +13607,7 @@ var require_fetch = __commonJS({
     function handleFetchDone(response) {
       finalizeAndReportTiming(response, "fetch");
     }
-    function fetch2(input, init = void 0) {
+    function fetch3(input, init = void 0) {
       webidl.argumentLengthCheck(arguments, 1, "globalThis.fetch");
       let p = createDeferredPromise();
       let requestObject;
@@ -14562,7 +14562,7 @@ var require_fetch = __commonJS({
       }
     }
     module.exports = {
-      fetch: fetch2,
+      fetch: fetch3,
       Fetch,
       fetching,
       finalizeAndReportTiming
@@ -18318,7 +18318,7 @@ var require_eventsource_stream = __commonJS({
     var DATA = Buffer.from("data");
     var EVENT = Buffer.from("event");
     var ID = Buffer.from("id");
-    var RETRY = Buffer.from("retry");
+    var RETRY2 = Buffer.from("retry");
     var minParserItems = 1024;
     var maxParserItems = 131072;
     var bytesPerParserItem = 128;
@@ -18526,7 +18526,7 @@ ${value}`;
           this.dataLineCount++;
           return;
         }
-        if (isFieldName(line2, fieldLength, RETRY)) {
+        if (isFieldName(line2, fieldLength, RETRY2)) {
           if (isASCIINumberBytes(line2, valueStart)) {
             this.setEventFieldSize("retry", line2.length - valueStart);
             event.retry = line2.toString("utf8", valueStart);
@@ -19100,7 +19100,7 @@ var require_undici = __commonJS({
     module.exports.setGlobalDispatcher = setGlobalDispatcher;
     module.exports.getGlobalDispatcher = getGlobalDispatcher;
     var fetchImpl = require_fetch().fetch;
-    module.exports.fetch = async function fetch2(init, options = void 0) {
+    module.exports.fetch = async function fetch3(init, options = void 0) {
       try {
         return await fetchImpl(init, options);
       } catch (err) {
@@ -27742,7 +27742,7 @@ var PARSE_SYSTEM = [
 // src/claude.ts
 var ClaudeError = class extends Error {
   constructor(kind) {
-    super({ timeout: "Claude timed out", failed: "Claude failed to run", invalid: "Claude returned invalid output" }[kind]);
+    super({ timeout: "Claude timed out", failed: "Claude failed to run", invalid: "Claude returned invalid output", install: "Could not install the Claude CLI" }[kind]);
     this.kind = kind;
   }
   kind;
@@ -27823,7 +27823,7 @@ function installClaude(actionPath) {
     execFileSync("npm", ["ci", "--omit=dev", "--no-audit", "--no-fund"], opts);
     execFileSync(bin, ["--version"], opts);
   } catch {
-    throw new Error("Could not install the Claude CLI");
+    throw new ClaudeError("install");
   }
   return bin;
 }
@@ -29077,8 +29077,8 @@ function isPlainObject2(value) {
 }
 var noop = () => "";
 async function fetchWrapper(requestOptions) {
-  const fetch2 = requestOptions.request?.fetch || globalThis.fetch;
-  if (!fetch2) {
+  const fetch3 = requestOptions.request?.fetch || globalThis.fetch;
+  if (!fetch3) {
     throw new Error(
       "fetch is not set. Please pass a fetch implementation as new Octokit({ request: { fetch }}). Learn more at https://github.com/octokit/octokit.js/#fetch-missing"
     );
@@ -29094,7 +29094,7 @@ async function fetchWrapper(requestOptions) {
   );
   let fetchResponse;
   try {
-    fetchResponse = await fetch2(requestOptions.url, {
+    fetchResponse = await fetch3(requestOptions.url, {
       method: requestOptions.method,
       body,
       redirect: requestOptions.request?.redirect,
@@ -32247,6 +32247,56 @@ async function setState(gh, issue2, state) {
   issue2.labels = [...issue2.labels.filter((x) => !STATE_LABELS.includes(x)), state];
 }
 
+// src/google.ts
+var GoogleError = class extends Error {
+  constructor(kind) {
+    super({
+      auth: "Google authorization failed; renew GOOGLE_REFRESH_TOKEN",
+      failed: "Google Calendar request failed"
+    }[kind]);
+    this.kind = kind;
+  }
+  kind;
+};
+
+// src/failure.ts
+var STEPS = {
+  read: "reading the dump",
+  parse: "parsing it with Claude",
+  create: "creating items",
+  result: "posting the result",
+  run: "running the workflow"
+};
+var RETRY = "Comment `retry` (or any reply) to try again.";
+var CANCELLED = "the run stopped before it finished (cancelled, timed out or crashed).";
+var CLAUDE = {
+  timeout: "Claude timed out.",
+  failed: "Claude failed to run. If it keeps failing, renew the CLAUDE_CODE_OAUTH_TOKEN secret with `claude setup-token`.",
+  invalid: "Claude returned invalid output twice.",
+  install: "the Claude CLI could not be installed. If it keeps failing, check the npm registry status."
+};
+var GOOGLE = {
+  auth: "the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.",
+  failed: "a Google Calendar request failed. If it keeps failing, check the Google Workspace status page."
+};
+function failureMessage(e) {
+  if (e instanceof ClaudeError) return CLAUDE[e.kind];
+  if (e instanceof GoogleError) return GOOGLE[e.kind];
+  if (typeof e?.status === "number") {
+    return "a GitHub request failed. If it keeps failing, check githubstatus.com and that the workflow has `issues: write`.";
+  }
+  return "an unexpected error occurred. If it keeps failing, check the workflow run log.";
+}
+function failureComment(step, message, read) {
+  const parts = [`Todoman failed while ${step}: ${message}`, RETRY];
+  if (read !== void 0) parts.push(readMarker(read));
+  return parts.join("\n\n");
+}
+async function failDump(gh, issue2, body) {
+  await setState(gh, issue2, "failed");
+  await gh.comment(issue2.number, body);
+}
+
 // src/handlers/task.ts
 var taskHandler = {
   type: "task",
@@ -32306,6 +32356,7 @@ function resultComment(results, questions, state, read) {
   if (results.length) parts.push(["Todoman created:", ...results.map(line)].join("\n"));
   if (questions.length) parts.push(questionBlock(questions));
   if (state === "processed") parts.push("To change anything, open a new dump.");
+  if (state === "failed") parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
   parts.push(readMarker(read));
   return parts.join("\n\n");
 }
@@ -32472,15 +32523,31 @@ async function processDump(p) {
     return;
   }
   await setState(p.gh, d.issue, PROCESSING);
-  const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d);
-  const state = endState(results, questions);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
-  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-  await setState(p.gh, d.issue, state);
-  if (state === "processed") await p.gh.closeCompleted(p.issue);
-  p.log(`Dump #${p.issue}: ${state}`);
+  const at = { step: STEPS.read };
+  try {
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    at.step = STEPS.result;
+    const state = endState(results, questions);
+    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+    await setState(p.gh, d.issue, state);
+    if (state === "processed") await p.gh.closeCompleted(p.issue);
+    p.log(`Dump #${p.issue}: ${state}`);
+  } catch (e) {
+    await failDump(p.gh, d.issue, failureComment(at.step, failureMessage(e), read)).catch(() => void 0);
+    throw e;
+  }
 }
-async function parseAndCreate(p, d) {
+async function failInterruptedRun(gh, n, log) {
+  const issue2 = await gh.getIssue(n);
+  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
+    log("Nothing to mark failed");
+    return;
+  }
+  await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
+  log(`Dump #${n}: failed`);
+}
+async function parseAndCreate(p, d, at) {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -32488,6 +32555,7 @@ async function parseAndCreate(p, d) {
   ]);
   const people = peopleText !== null && parsePeople(peopleText) || [];
   const now = p.now();
+  at.step = STEPS.parse;
   const output = await p.claude({
     model: MODELS.parse,
     system: PARSE_SYSTEM,
@@ -32497,6 +32565,7 @@ async function parseAndCreate(p, d) {
   });
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
+  at.step = STEPS.create;
   const results = [];
   for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
@@ -32509,8 +32578,8 @@ async function parseAndCreate(p, d) {
     }
     try {
       results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
-    } catch {
-      results.push({ type: item.type, ok: false, title, reason: "creating it failed" });
+    } catch (e) {
+      results.push({ type: item.type, ok: false, title, reason: failureMessage(e) });
     }
   }
   return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
@@ -32537,10 +32606,12 @@ var handlers = {
   process: (env) => {
     const issue2 = eventIssue(env);
     if (!issue2) throw new Error("process: the event has no issue");
+    const gh = createGh(env);
+    if (env["INPUT_ON-FAILURE"] === "true") return failInterruptedRun(gh, issue2, info);
     const { owner, tz } = loadConfig(env);
     let bin;
     return processDump({
-      gh: createGh(env),
+      gh,
       repo: env.GITHUB_REPOSITORY ?? "",
       issue: issue2,
       owner,

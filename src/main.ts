@@ -4,7 +4,7 @@ import { installClaude, runClaude } from './claude.js';
 import { eventActor, eventIssue, isOwner } from './gate.js';
 import { runDoctor } from './doctor.js';
 import { createGh } from './github.js';
-import { processDump } from './process.js';
+import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
 
 export const MODES = ['process', 'summary', 'doctor'] as const;
@@ -14,10 +14,12 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
   process: (env) => {
     const issue = eventIssue(env);
     if (!issue) throw new Error('process: the event has no issue');
+    const gh = createGh(env);
+    if (env['INPUT_ON-FAILURE'] === 'true') return failInterruptedRun(gh, issue, core.info); // the workflow's failure/cancel step
     const { owner, tz } = loadConfig(env);
     let bin: string | undefined; // installed only once the gate lets a run reach Claude
     return processDump({
-      gh: createGh(env),
+      gh,
       repo: env.GITHUB_REPOSITORY ?? '',
       issue,
       owner,

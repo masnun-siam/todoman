@@ -19,11 +19,11 @@ export interface ClaudeOptions {
   timeoutMs?: number;
 }
 
-export type ClaudeErrorKind = 'timeout' | 'failed' | 'invalid';
+export type ClaudeErrorKind = 'timeout' | 'failed' | 'invalid' | 'install';
 /** Messages are fixed text: never the CLI's output, stderr or any secret. */
 export class ClaudeError extends Error {
   constructor(readonly kind: ClaudeErrorKind) {
-    super({ timeout: 'Claude timed out', failed: 'Claude failed to run', invalid: 'Claude returned invalid output' }[kind]);
+    super({ timeout: 'Claude timed out', failed: 'Claude failed to run', invalid: 'Claude returned invalid output', install: 'Could not install the Claude CLI' }[kind]);
   }
 }
 
@@ -100,7 +100,7 @@ export function installClaude(actionPath: string): string {
     execFileSync('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], opts);
     execFileSync(bin, ['--version'], opts); // a skipped postinstall leaves a stub that cannot run
   } catch {
-    throw new Error('Could not install the Claude CLI'); // fixed text: never npm's output
+    throw new ClaudeError('install'); // fixed text: never npm's output
   }
   return bin;
 }

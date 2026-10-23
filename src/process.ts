@@ -1,5 +1,6 @@
 import type { ClaudeRequest } from './claude.js';
 import { createdItems, PROCESSING, readDump, setState, shouldProcess, thread, type CreatedItem, type Dump } from './dump.js';
+import { CANCELLED, failDump, failureComment, failureMessage, STEPS, type Step } from './failure.js';
 import type { ProcessGh } from './github.js';
 import { HANDLERS, type ItemHandler } from './handlers.js';
 import { parsePeople, type Person } from './invitees.js';
@@ -41,7 +42,10 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
   });
 }
 
-/** process mode (FR-2, FR-6, FR-7, FR-8): gate on the live dump, parse, create items, post one result comment, set the end state. */
+/**
+ * process mode (FR-2, FR-6, FR-7, FR-8, FR-9): gate on the live dump, parse, create items, post one result comment,
+ * set the end state. A step that throws leaves the dump `failed` with a fixed message naming the step, then rethrows.
+ */
 export async function processDump(p: ProcessDeps): Promise<void> {
   const d = await readDump(p.gh, p.issue);
   if (!shouldProcess(d, p.owner, p.now())) {
@@ -49,17 +53,36 @@ export async function processDump(p: ProcessDeps): Promise<void> {
     return;
   }
   await setState(p.gh, d.issue, PROCESSING);
-  const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d);
-  const state = endState(results, questions);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
-  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-  await setState(p.gh, d.issue, state);
-  if (state === 'processed') await p.gh.closeCompleted(p.issue);
-  p.log(`Dump #${p.issue}: ${state}`);
+  const at: { step: Step } = { step: STEPS.read };
+  try {
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    at.step = STEPS.result;
+    const state = endState(results, questions);
+    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+    await setState(p.gh, d.issue, state);
+    if (state === 'processed') await p.gh.closeCompleted(p.issue);
+    p.log(`Dump #${p.issue}: ${state}`);
+  } catch (e) {
+    // ponytail: if marking failed fails too, the workflow's failure step retries the mark
+    await failDump(p.gh, d.issue, failureComment(at.step, failureMessage(e), read)).catch(() => undefined);
+    throw e;
+  }
 }
 
-/** Parse the dump with Claude, then create each valid item; failing items come back as questions. */
-async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemResult[]; questions: Question[] }> {
+/** The workflow's failure/cancel step (FR-9): a dump the run left in todoman:processing ends `failed`. */
+export async function failInterruptedRun(gh: ProcessGh, n: number, log: (line: string) => void): Promise<void> {
+  const issue = await gh.getIssue(n);
+  if (issue.state !== 'open' || !issue.labels.includes(PROCESSING)) {
+    log('Nothing to mark failed');
+    return;
+  }
+  await failDump(gh, issue, failureComment(STEPS.run, CANCELLED));
+  log(`Dump #${n}: failed`);
+}
+
+/** Parse the dump with Claude, then create each valid item; `at` tracks the step for a failure comment. */
+async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Promise<{ results: ItemResult[]; questions: Question[] }> {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -67,6 +90,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemR
   ]);
   const people = (peopleText !== null && parsePeople(peopleText)) || [];
   const now = p.now();
+  at.step = STEPS.parse;
   const output = await p.claude({
     model: MODELS.parse,
     system: PARSE_SYSTEM,
@@ -77,6 +101,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemR
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join('\n');
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
 
+  at.step = STEPS.create;
   const results: ItemResult[] = [];
   for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
@@ -89,8 +114,8 @@ async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemR
     }
     try {
       results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
-    } catch {
-      results.push({ type: item.type, ok: false, title, reason: 'creating it failed' }); // fixed text: never an error body
+    } catch (e) {
+      results.push({ type: item.type, ok: false, title, reason: failureMessage(e) }); // fixed text: never an error body
     }
   }
   return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
