@@ -93,6 +93,7 @@ gh variable set FEATURE_DUMP_TO_ISSUES -R "$REPO" --body true   # sandbox only; 
 
 ```sh
 gh workflow run 'Todoman summary' -R "$REPO" -f mode=doctor
+sleep 5   # let the run appear
 gh run watch -R "$REPO" "$(gh run list -R "$REPO" -w 'Todoman summary' -L 1 --json databaseId -q '.[0].databaseId')"
 ```
 
@@ -114,7 +115,7 @@ A dump is any issue you open in the data repo without a Todoman label; its title
 
 **GitHub web.** Open <https://github.com/masnun-siam/todo/issues/new>, write the dump as the title (and body if long), submit. Bookmark the URL.
 
-**GitHub mobile app.** `masnun-siam/todo` > Issues > New issue (or the **+** on the Home tab), write it, Create. Add no labels.
+**GitHub mobile app.** `masnun-siam/todo` > Issues > New issue, write it, Create. Add no labels.
 
 **`gh` one-liner:**
 
