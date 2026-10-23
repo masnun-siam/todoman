@@ -68,11 +68,12 @@ export async function processDump(p: ProcessDeps): Promise<void> {
     p.log('Nothing to process');
     return;
   }
+  const answered = d.issue.labels.includes('needs-info'); // read before setState swaps the label
   await setState(p.gh, d.issue, PROCESSING);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
   const at: { step: Step } = { step: STEPS.read };
   try {
-    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at, answered);
     at.step = STEPS.result;
     const state = endState(results, questions);
     await p.gh.comment(p.issue, resultComment(results, questions, state, read));
@@ -97,8 +98,11 @@ export async function failInterruptedRun(gh: ProcessGh, n: number, log: (line: s
   log(`Dump #${n}: failed`);
 }
 
-/** Parse the dump with Claude, then create each valid item; `at` tracks the step for a failure comment. */
-async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Promise<{ results: ItemResult[]; questions: Question[] }> {
+/**
+ * Parse the dump with Claude, then create each valid item; `at` tracks the step for a failure comment.
+ * `answered`: Siam replied to a `needs-info` question, so nothing left to create or ask ends the dump, not asks again.
+ */
+async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }, answered: boolean): Promise<{ results: ItemResult[]; questions: Question[] }> {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -130,5 +134,5 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Prom
       results.push({ type: item.type, ok: false, title, reason, note });
     }
   }
-  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
+  return { results, questions: !answered && nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
 }

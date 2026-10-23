@@ -33204,11 +33204,12 @@ async function processDump(p) {
     p.log("Nothing to process");
     return;
   }
+  const answered = d.issue.labels.includes("needs-info");
   await setState(p.gh, d.issue, PROCESSING);
   const read = Math.max(0, ...d.comments.map((c) => c.id));
   const at = { step: STEPS.read };
   try {
-    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at, answered);
     at.step = STEPS.result;
     const state = endState(results, questions);
     await p.gh.comment(p.issue, resultComment(results, questions, state, read));
@@ -33229,7 +33230,7 @@ async function failInterruptedRun(gh, n, log) {
   await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
   log(`Dump #${n}: failed`);
 }
-async function parseAndCreate(p, d, at) {
+async function parseAndCreate(p, d, at, answered) {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -33260,7 +33261,7 @@ async function parseAndCreate(p, d, at) {
       results.push({ type: item.type, ok: false, title, reason, note: note2 });
     }
   }
-  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
+  return { results, questions: !answered && nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
 }
 
 // src/secrets.ts

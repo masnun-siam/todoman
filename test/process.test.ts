@@ -398,6 +398,22 @@ describe('processDump questions (FR-7)', () => {
     expect(comments(writes)[0]).toContain('To change anything, open a new dump.');
     expect(writes).toContain('close#5');
   });
+  it('"skip it" with nothing created processes and closes the dump', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'skip it')]);
+    await run(gh, { items: [], questions: [] });
+    const [c] = comments(writes);
+    expect(c).toContain('To change anything, open a new dump.');
+    expect(c).not.toContain("couldn't find");
+    expect(writes).toContain('+processed#5');
+    expect(writes).toContain('close#5');
+  });
+  it('a failed retry with nothing created still asks the nothing-found question', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['failed'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'retry')]);
+    await run(gh, { items: [], questions: [] });
+    expect(comments(writes)[0]).toContain("I couldn't find a task, meeting or reference in this. Reply here to answer.");
+    expect(writes).toContain('+needs-info#5');
+    expect(writes).not.toContain('close#5');
+  });
   it.each([
     ['in the past', '2026-10-20T11:00:00+06:00'],
     ['over 365 days ahead', '2027-10-22T11:00:00+06:00'],

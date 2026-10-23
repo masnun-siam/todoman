@@ -38,6 +38,7 @@ Open each dump with `gh issue create -R masnun-siam/todo-sandbox --body '' --tit
 | 6, 7 | `meeting with asif about the roadmap` (no date or time), plus `call the bank` in the same dump | The task is created; the meeting is asked about ("Reply here to answer."); dump `needs-info`, open. |
 | 7, 8 | Reply `tuesday 3pm` on that dump | Reprocessed with the thread: the meeting is created, the task is not created again; dump `processed`. |
 | 7 | Reply `skip it` on a `needs-info` dump | The item is dropped; nothing created for it. |
+| 7 | `meeting with asif` (no time), then reply `skip it` | Nothing created; result comment ends "To change anything, open a new dump."; dump `processed` and closed. |
 | 7 | A dump with nothing actionable (`hello`) | Nothing created; `needs-info` with "I couldn't find a task, meeting or reference in this." |
 | 8 | Re-run a finished process run from the Actions tab | Exits without calling Claude; no second issue, event or result comment. |
 | 8, 9 | Open a dump with a task and a meeting, and cancel the run mid-way, after the task issue appears but before the result comment (`gh run cancel <id> -R masnun-siam/todo-sandbox`) | The dump ends `failed`, open, with a comment naming the step and ending "Comment `retry` (or any reply) to try again." Comment `retry`: only the missing items are created, each once; one event on the calendar. |
