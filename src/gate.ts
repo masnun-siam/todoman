@@ -1,11 +1,22 @@
 import { readFileSync } from 'node:fs';
 import type { Env } from './config.js';
 
-/** Actor of the event payload file (GITHUB_EVENT_PATH), never a shell-interpolated string. */
+interface EventPayload {
+  sender?: { login?: string };
+  issue?: { number?: number };
+}
+
+/** The event payload file (GITHUB_EVENT_PATH), never a shell-interpolated string. */
+function readEvent(env: Env): EventPayload {
+  return env.GITHUB_EVENT_PATH ? (JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) as EventPayload) : {};
+}
+
 export function eventActor(env: Env): string | undefined {
-  if (!env.GITHUB_EVENT_PATH) return undefined;
-  const payload = JSON.parse(readFileSync(env.GITHUB_EVENT_PATH, 'utf8')) as { sender?: { login?: string } };
-  return payload.sender?.login;
+  return readEvent(env).sender?.login;
+}
+
+export function eventIssue(env: Env): number | undefined {
+  return readEvent(env).issue?.number;
 }
 
 export function isOwner(actor: string | undefined, owner: string): boolean {

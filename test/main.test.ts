@@ -7,11 +7,12 @@ import { run } from '../src/main.js';
 
 vi.mock('@actions/core');
 vi.mock('../src/github.js', () => ({ createGh: () => ({}) }));
+vi.mock('../src/process.js', () => ({ processDump: async (p: { log: (l: string) => void; issue: number }) => p.log(`mode: process #${p.issue}`) }));
 vi.mock('../src/doctor.js', () => ({ runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
 function event(login: string): string {
   const p = join(tmpdir(), `todoman-event-${login}.json`);
-  writeFileSync(p, JSON.stringify({ sender: { login } }));
+  writeFileSync(p, JSON.stringify({ sender: { login }, issue: { number: 5 } }));
   return p;
 }
 const on = { FEATURE_DUMP_TO_ISSUES: 'true' };
@@ -38,17 +39,17 @@ describe('run', () => {
   it('runs process for the owner and summary without an event', async () => {
     await run('process', mine);
     await run('summary', on);
-    expect(core.info).toHaveBeenCalledWith('mode: process');
+    expect(core.info).toHaveBeenCalledWith('mode: process #5');
     expect(core.info).toHaveBeenCalledWith('mode: summary');
   });
   it('ignores a foreign author before reading any secret', async () => {
     await run('process', { ...on, GITHUB_EVENT_PATH: event('mallory'), CLAUDE_CODE_OAUTH_TOKEN: 's' });
-    expect(core.info).not.toHaveBeenCalledWith('mode: process');
+    expect(core.info).not.toHaveBeenCalledWith('mode: process #5');
     expect(core.setSecret).not.toHaveBeenCalled();
   });
   it('honours TODOMAN_OWNER', async () => {
     await run('process', { ...on, TODOMAN_OWNER: 'other', GITHUB_EVENT_PATH: mine.GITHUB_EVENT_PATH });
-    expect(core.info).not.toHaveBeenCalledWith('mode: process');
+    expect(core.info).not.toHaveBeenCalledWith('mode: process #5');
   });
   it('masks every secret and each GH_READ_TOKENS token', async () => {
     await run('process', {

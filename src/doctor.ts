@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parse } from 'yaml';
+import { parsePeople } from './invitees.js';
 import { LABELS } from './labels.js';
 import type { Gh } from './github.js';
 
@@ -41,16 +41,7 @@ export const baseChecks: Check[] = [
     async run({ gh }) {
       const fix = 'Fix people.yml: a list of { name, aliases[], email } entries.';
       const text = await gh.fileText('people.yml');
-      if (text === null) return fix;
-      try {
-        const people: unknown = parse(text);
-        const ok =
-          Array.isArray(people) &&
-          people.every((p) => p && typeof p.name === 'string' && typeof p.email === 'string' && Array.isArray(p.aliases));
-        return ok ? undefined : fix;
-      } catch {
-        return fix;
-      }
+      return text !== null && parsePeople(text) ? undefined : fix;
     },
   },
 ];

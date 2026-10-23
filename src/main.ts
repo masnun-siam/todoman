@@ -1,15 +1,32 @@
 import * as core from '@actions/core';
 import { loadConfig, type Env } from './config.js';
-import { eventActor, isOwner } from './gate.js';
+import { installClaude, runClaude } from './claude.js';
+import { eventActor, eventIssue, isOwner } from './gate.js';
 import { runDoctor } from './doctor.js';
 import { createGh } from './github.js';
+import { processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
 
 export const MODES = ['process', 'summary', 'doctor'] as const;
 export type Mode = (typeof MODES)[number];
 
 const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
-  process: () => core.info('mode: process'),
+  process: (env) => {
+    const issue = eventIssue(env);
+    if (!issue) throw new Error('process: the event has no issue');
+    const { owner, tz } = loadConfig(env);
+    let bin: string | undefined; // installed only once the gate lets a run reach Claude
+    return processDump({
+      gh: createGh(env),
+      repo: env.GITHUB_REPOSITORY ?? '',
+      issue,
+      owner,
+      tz,
+      now: () => new Date(),
+      claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? '', bin: (bin ??= installClaude(env.GITHUB_ACTION_PATH ?? '.')) }),
+      log: core.info,
+    });
+  },
   summary: () => core.info('mode: summary'),
   doctor: (env) => runDoctor(createGh(env), core.info),
 };

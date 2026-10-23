@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -86,4 +86,21 @@ export async function runClaude(r: ClaudeRequest, o: ClaudeOptions): Promise<unk
     }
     if (attempt === 1) throw new ClaudeError('invalid');
   }
+}
+
+/**
+ * The action ships only dist/, so the pinned CLI is installed from the lockfile (integrity-checked)
+ * into the action's own folder on first use. Returns the `claude` binary path.
+ */
+export function installClaude(actionPath: string): string {
+  const bin = join(actionPath, 'node_modules', '.bin', 'claude');
+  // env holds no secrets: the CLI's postinstall must not see GitHub, Google or Claude tokens
+  const opts = { cwd: actionPath, env: { PATH: process.env.PATH, HOME: process.env.HOME }, stdio: 'ignore' as const, timeout: FIVE_MIN };
+  try {
+    execFileSync('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], opts);
+    execFileSync(bin, ['--version'], opts); // a skipped postinstall leaves a stub that cannot run
+  } catch {
+    throw new Error('Could not install the Claude CLI'); // fixed text: never npm's output
+  }
+  return bin;
 }
