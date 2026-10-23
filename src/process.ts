@@ -8,9 +8,10 @@ import { LABELS } from './labels.js';
 import { BOT } from './markers.js';
 import { isCreated } from './match.js';
 import { MODELS, PARSE_SYSTEM } from './prompts.js';
+import { NOTHING_FOUND, nothingFound, TOO_LONG, tooLong } from './questions.js';
 import { endState, resultComment, type ItemResult } from './result.js';
 import { PARSER_SCHEMA } from './schema.js';
-import { validate } from './validate.js';
+import { validate, type Question } from './validate.js';
 
 export interface ProcessDeps {
   gh: ProcessGh;
@@ -40,7 +41,7 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
   });
 }
 
-/** process mode (FR-2, FR-6, FR-8): gate on the live dump, parse, create items, post one result comment, set the end state. */
+/** process mode (FR-2, FR-6, FR-7, FR-8): gate on the live dump, parse, create items, post one result comment, set the end state. */
 export async function processDump(p: ProcessDeps): Promise<void> {
   const d = await readDump(p.gh, p.issue);
   if (!shouldProcess(d, p.owner, p.now())) {
@@ -48,6 +49,17 @@ export async function processDump(p: ProcessDeps): Promise<void> {
     return;
   }
   await setState(p.gh, d.issue, PROCESSING);
+  const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d);
+  const state = endState(results, questions);
+  const read = Math.max(0, ...d.comments.map((c) => c.id));
+  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+  await setState(p.gh, d.issue, state);
+  if (state === 'processed') await p.gh.closeCompleted(p.issue);
+  p.log(`Dump #${p.issue}: ${state}`);
+}
+
+/** Parse the dump with Claude, then create each valid item; failing items come back as questions. */
+async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemResult[]; questions: Question[] }> {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -81,11 +93,5 @@ export async function processDump(p: ProcessDeps): Promise<void> {
       results.push({ type: item.type, ok: false, title, reason: 'creating it failed' }); // fixed text: never an error body
     }
   }
-
-  const state = endState(results, questions);
-  const read = Math.max(0, ...d.comments.map((c) => c.id));
-  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-  await setState(p.gh, d.issue, state);
-  if (state === 'processed') await p.gh.closeCompleted(p.issue);
-  p.log(`Dump #${p.issue}: ${state}`);
+  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
 }

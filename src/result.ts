@@ -1,6 +1,7 @@
 import type { EndState } from './dump.js';
 import type { Created } from './handlers.js';
 import { readMarker } from './markers.js';
+import { questionBlock } from './questions.js';
 import type { Question } from './validate.js';
 
 export type ItemResult = { type: string } & ({ ok: true; created: Created } | { ok: false; title: string; reason: string });
@@ -21,7 +22,7 @@ function line(r: ItemResult): string {
 export function resultComment(results: ItemResult[], questions: Question[], state: EndState, read: number): string {
   const parts: string[] = [];
   if (results.length) parts.push(['Todoman created:', ...results.map(line)].join('\n'));
-  if (questions.length) parts.push(['Questions:', ...questions.map((q) => `- ${q.about}: ${q.question}`), '', 'Reply here to answer.'].join('\n'));
+  if (questions.length) parts.push(questionBlock(questions));
   if (state === 'processed') parts.push('To change anything, open a new dump.');
   parts.push(readMarker(read));
   return parts.join('\n\n');
