@@ -227,7 +227,13 @@ describe('failures (FR-9)', () => {
     expect(c).toContain(`Todoman failed while ${want}`);
     expect(c).toContain(`${RETRY}\n\n${readMarker(8)}`);
     expect(writes.join()).not.toContain(SECRET);
-    expect(writes.slice(-2)).toEqual(['+failed#5', '-todoman:processing#5']);
+    expect(writes.slice(-3, -1)).toEqual(['+failed#5', '-todoman:processing#5']);
+  });
+  it('a failure comment that cannot be posted still leaves the dump failed, not processing', async () => {
+    const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
+    gh.comment = async () => { throw new Error('down'); };
+    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
+    expect(writes).toEqual(['+todoman:processing#5', '+failed#5', '-todoman:processing#5']);
   });
   it('a revoked Google token fails the item with how to renew it, keeping the items created', async () => {
     const meeting: ItemHandler = { type: 'meeting', create: async () => { throw new GoogleError('auth'); } };
@@ -261,9 +267,9 @@ describe('failInterruptedRun (cancel or timeout, FR-9)', () => {
     const { gh, writes } = fakeGh(dumpIssue({ labels: ['todoman:processing'] }));
     await failInterruptedRun(gh, 5, () => undefined);
     expect(writes).toEqual([
-      `comment#5:Todoman failed while running the workflow: the run was cancelled or timed out before it finished.\n\n${RETRY}`,
       '+failed#5',
       '-todoman:processing#5',
+      `comment#5:Todoman failed while running the workflow: the run stopped before it finished (cancelled, timed out or crashed).\n\n${RETRY}`,
     ]);
   });
   it.each([

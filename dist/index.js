@@ -32268,7 +32268,7 @@ var STEPS = {
   run: "running the workflow"
 };
 var RETRY = "Comment `retry` (or any reply) to try again.";
-var CANCELLED = "the run was cancelled or timed out before it finished.";
+var CANCELLED = "the run stopped before it finished (cancelled, timed out or crashed).";
 var CLAUDE = {
   timeout: "Claude timed out.",
   failed: "Claude failed to run. If it keeps failing, renew the CLAUDE_CODE_OAUTH_TOKEN secret with `claude setup-token`.",
@@ -32293,8 +32293,8 @@ function failureComment(step, message, read) {
   return parts.join("\n\n");
 }
 async function failDump(gh, issue2, body) {
-  await gh.comment(issue2.number, body);
   await setState(gh, issue2, "failed");
+  await gh.comment(issue2.number, body);
 }
 
 // src/handlers/task.ts

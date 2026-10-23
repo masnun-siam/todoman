@@ -15,7 +15,7 @@ export const STEPS = {
 export type Step = (typeof STEPS)[keyof typeof STEPS];
 
 export const RETRY = 'Comment `retry` (or any reply) to try again.';
-export const CANCELLED = 'the run was cancelled or timed out before it finished.';
+export const CANCELLED = 'the run stopped before it finished (cancelled, timed out or crashed).';
 
 const CLAUDE: Record<ClaudeError['kind'], string> = {
   timeout: 'Claude timed out.',
@@ -45,8 +45,8 @@ export function failureComment(step: Step, message: string, read?: number): stri
   return parts.join('\n\n');
 }
 
-/** Post the failure comment, then set `failed`. */
+/** Set `failed` first, so a failed comment post never leaves the dump in todoman:processing; then comment. */
 export async function failDump(gh: ProcessGh, issue: Issue, body: string): Promise<void> {
-  await gh.comment(issue.number, body);
   await setState(gh, issue, 'failed');
+  await gh.comment(issue.number, body);
 }
