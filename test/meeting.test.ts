@@ -46,7 +46,7 @@ function ctx(opts: { event?: EventResult; failIssue?: boolean; failInsert?: bool
     },
   } as unknown as ProcessGh;
   const dump: Issue = { number: 5, title: 'd', body: '', url: 'https://github.com/o/r/issues/5', author: 'masnun-siam', state: 'open', labels: [], createdAt: '' };
-  const c: ItemContext = { gh, calendar, external: () => { throw new Error('unused'); }, repo: 'o/r', owner: 'masnun-siam', tz: 'Asia/Dhaka', dump, key: 'i2' };
+  const c: ItemContext = { gh, calendar, external: () => { throw new Error('unused'); }, summarise: () => { throw new Error('unused'); }, repo: 'o/r', owner: 'masnun-siam', tz: 'Asia/Dhaka', dump, key: 'i2' };
   return { c, issues, events, described };
 }
 

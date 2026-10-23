@@ -11,14 +11,18 @@ vi.mock('../src/process.js', () => ({
   processDump: async (p: { log: (l: string) => void; issue: number }) => p.log(`mode: process #${p.issue}`),
   failInterruptedRun: async (_gh: unknown, n: number, log: (l: string) => void) => log(`on-failure #${n}`),
 }));
-vi.mock('../src/summary.js', () => ({ weeklySummary: async (d: { log: (l: string) => void }) => d.log('mode: summary') }));
+vi.mock('../src/summary.js', () => ({
+  weeklySummary: async (d: { log: (l: string) => void }) => d.log('mode: summary'),
+  onDemandSummary: async (_d: unknown, from: string, to: string) => ({ issue: { url: `summary ${from}..${to}` }, reused: from === to }),
+}));
 vi.mock('../src/doctor.js', () => ({ baseChecks: [], secretChecks: () => [], runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
-function event(login: string): string {
-  const p = join(tmpdir(), `todoman-event-${login}.json`);
-  writeFileSync(p, JSON.stringify({ sender: { login }, issue: { number: 5 } }));
+function event(login: string, extra: object = { issue: { number: 5 } }, name = login): string {
+  const p = join(tmpdir(), `todoman-event-${name}.json`);
+  writeFileSync(p, JSON.stringify({ sender: { login }, ...extra }));
   return p;
 }
+const dispatch = (from: string, to: string) => ({ ...on, GITHUB_EVENT_PATH: event('masnun-siam', { inputs: { mode: 'summary', from, to } }, `${from}-${to}`) });
 const on = { FEATURE_DUMP_TO_ISSUES: 'true' };
 const mine = { ...on, GITHUB_EVENT_PATH: event('masnun-siam') };
 
@@ -46,6 +50,22 @@ describe('run', () => {
     expect(core.info).toHaveBeenCalledWith('mode: process #5');
     expect(core.info).toHaveBeenCalledWith('mode: summary');
   });
+  it('a dispatched summary with dates runs on demand and prints its link (FR-11)', async () => {
+    await run('summary', dispatch('2026-10-12', '2026-10-18'));
+    await run('summary', dispatch('2026-10-22', '2026-10-22'));
+    await run('summary', dispatch('', ''));
+    expect(vi.mocked(core.info).mock.calls.map((c) => c[0])).toEqual([
+      'Summary: summary 2026-10-12..2026-10-18',
+      'Existing summary: summary 2026-10-22..2026-10-22',
+      'mode: summary',
+    ]);
+  });
+  it.each([['2026-10-01', '2026-11-01'], ['2026-10-12', ''], ['2026-10-18', '2026-10-12'], ['monday', 'friday']])(
+    'refuses a dispatched period %s..%s',
+    async (from, to) => {
+      await expect(run('summary', dispatch(from, to))).rejects.toThrow(/^summary: /);
+    },
+  );
   it('on-failure true marks the run failed instead of processing', async () => {
     await run('process', { ...mine, 'INPUT_ON-FAILURE': 'true' });
     await run('process', { ...mine, 'INPUT_ON-FAILURE': 'false' });

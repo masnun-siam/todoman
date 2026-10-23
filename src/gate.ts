@@ -4,6 +4,7 @@ import type { Env } from './config.js';
 interface EventPayload {
   sender?: { login?: string };
   issue?: { number?: number };
+  inputs?: { from?: string; to?: string };
 }
 
 /** The event payload file (GITHUB_EVENT_PATH), never a shell-interpolated string. */
@@ -17,6 +18,12 @@ export function eventActor(env: Env): string | undefined {
 
 export function eventIssue(env: Env): number | undefined {
   return readEvent(env).issue?.number;
+}
+
+/** workflow_dispatch `from`/`to` inputs; empty when not given. */
+export function eventDates(env: Env): { from: string; to: string } {
+  const i = readEvent(env).inputs;
+  return { from: i?.from?.trim() ?? '', to: i?.to?.trim() ?? '' };
 }
 
 export function isOwner(actor: string | undefined, owner: string): boolean {

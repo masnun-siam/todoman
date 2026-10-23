@@ -85,11 +85,16 @@ function tracking(raw: Raw, ctx: ValidateContext): ValidItem | string {
   return { type: 'tracking', ref, note };
 }
 
-function summary(raw: Raw): ValidItem | string {
-  const { from, to } = raw;
+/** What is wrong with a summary period of whole days (FR-11 limit: 31 days), or null when it is fine. */
+export function periodProblem(from: unknown, to: unknown): string | null {
   if (!isDate(from) || !isDate(to) || from > to) return 'Which period should the summary cover (dates)?';
   if (daysBetween(from, to) + 1 > 31) return 'A summary covers at most 31 days; which period?';
-  return { type: 'summary', from, to };
+  return null;
+}
+
+function summary(raw: Raw): ValidItem | string {
+  const { from, to } = raw;
+  return periodProblem(from, to) ?? { type: 'summary', from: from as string, to: to as string };
 }
 
 /** Validates the parser output (FR-7): a failing item becomes a question, never an error. */

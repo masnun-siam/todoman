@@ -138,6 +138,16 @@ gh alias set --shell dump 'gh issue create -R masnun-siam/todo --body "" --title
    3. **Get Dictionary Value** `html_url` from *Contents of URL*, then **Show Notification** with it (optional, confirms the dump was created).
 3. Add it to the Home Screen or Action button, or say "Hey Siri, Todo dump". Keep a dictation under 256 characters (GitHub's title limit). When the token expires, create a new one and replace it in the header.
 
+## Summaries
+
+A weekly `summary` issue opens every Thursday 18:00 Asia/Dhaka. For any other period (whole days, at most 31), dump `worklog for today` or `summary for last week`, or dispatch the summary workflow with dates; the run log prints the link:
+
+```sh
+gh workflow run 'Todoman summary' -R masnun-siam/todo -f mode=summary -f from=2026-10-12 -f to=2026-10-18
+```
+
+A summary for exactly that period that was created after the period ended is linked instead of opening a new one.
+
 ## Doctor
 
 Run the `Todoman summary` workflow by hand with mode `doctor` (on the data repo). It creates any missing labels and prints `PASS` or `FAIL` plus the fix for each check, never a token or an error body:
