@@ -1,0 +1,6 @@
+{
+  "name": "Summary for a date range",
+  "now": "2026-10-21T12:01:00Z",
+  "dump": { "title": "summary for 12 to 18 october", "body": "", "at": "2026-10-21T12:00:00Z" },
+  "expect": { "items": [{ "type": "summary", "from": "2026-10-12", "to": "2026-10-18" }], "question": false }
+}

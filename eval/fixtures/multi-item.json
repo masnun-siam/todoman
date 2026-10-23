@@ -1,0 +1,14 @@
+{
+  "name": "Multi-item dump",
+  "now": "2026-10-21T04:01:00Z",
+  "dump": { "title": "a few things", "body": "buy milk by friday\ncall the bank about the card\nmeeting with asif tomorrow at 3pm about the budget", "at": "2026-10-21T04:00:00Z" },
+  "people": [{ "name": "Asif", "aliases": ["asif"], "email": "asif@example.com" }],
+  "expect": {
+    "items": [
+      { "type": "task", "due": "2026-10-23" },
+      { "type": "task", "due": null },
+      { "type": "meeting", "start": "2026-10-22T15:00:00+06:00", "durationMinutes": 30, "invitees": ["Asif"] }
+    ],
+    "question": false
+  }
+}

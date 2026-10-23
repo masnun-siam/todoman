@@ -1,0 +1,12 @@
+{
+  "name": "External references (owner/repo#n and URL)",
+  "now": "2026-10-21T04:01:00Z",
+  "dump": { "title": "track these", "body": "keep an eye on masnun-siam/meeting-manager#85, waiting on review\nalso follow https://github.com/acme/api/pull/12 until it is merged", "at": "2026-10-21T04:00:00Z" },
+  "expect": {
+    "items": [
+      { "type": "tracking", "ref": "masnun-siam/meeting-manager#85" },
+      { "type": "tracking", "ref": "acme/api#12" }
+    ],
+    "question": false
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "name": "Asif example (FR-4 acceptance)",
+  "now": "2026-10-21T04:01:00Z",
+  "dump": { "title": "have a meeting with asif about prd review on monday 11 am for 1 hour", "body": "", "at": "2026-10-21T04:00:00Z" },
+  "people": [{ "name": "Asif", "aliases": ["asif"], "email": "asif@example.com" }],
+  "expect": {
+    "items": [{ "type": "meeting", "start": "2026-10-26T11:00:00+06:00", "durationMinutes": 60, "invitees": ["Asif"] }],
+    "question": false
+  }
+}
