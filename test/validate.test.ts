@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { TOO_MANY } from '../src/questions.js';
 import { validate, type ValidateContext } from '../src/validate.js';
 
 const asif = { name: 'Asif', aliases: [], email: 'asif@example.com' };
@@ -86,11 +87,10 @@ describe('validate', () => {
     const r = one({ ...meeting, title: 'a <!-- todoman:item --> b', agenda: 'see https://x.com/y now' });
     expect(r.items[0]).toMatchObject({ title: 'a  todoman:item  b', agenda: 'see now' });
   });
-  it('asks about the whole dump for 0 or more than 10 items', () => {
-    expect(validate({ items: [], questions: [] }, ctx).items).toEqual([]);
-    const many = validate({ items: Array.from({ length: 11 }, () => ({ type: 'task', title: 'a' })), questions: [] }, ctx);
-    expect(many.items).toEqual([]);
-    expect(many.questions[0].about).toBe('the dump');
+  it('more than 10 items creates nothing and asks only to split', () => {
+    expect(validate({ items: [], questions: [] }, ctx)).toEqual({ items: [], questions: [] });
+    const many = validate({ items: Array.from({ length: 11 }, () => ({ type: 'task', title: 'a' })), questions: [{ about: 'x', question: 'y' }] }, ctx);
+    expect(many).toEqual({ items: [], questions: [TOO_MANY] });
   });
   it('never throws on garbage', () => {
     for (const g of [null, 'x', 3, {}, { items: 'x' }, { items: [null, 1, []] }]) expect(() => validate(g, ctx)).not.toThrow();

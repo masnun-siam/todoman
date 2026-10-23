@@ -32252,6 +32252,21 @@ function nextKey(markers, dump) {
   return `i${Math.max(0, ...used) + 1}`;
 }
 
+// src/questions.ts
+var MAX_ITEMS = 10;
+var MAX_DUMP_CHARS = 1e4;
+var REPLY = "Reply here to answer.";
+var whole = (question) => ({ about: "", question });
+var TOO_LONG = whole(`This dump is over ${MAX_DUMP_CHARS.toLocaleString("en-US")} characters, so I created nothing. Please split it into smaller dumps.`);
+var TOO_MANY = whole(`This dump has more than ${MAX_ITEMS} items, so I created nothing. Please split it into dumps of ${MAX_ITEMS} items or fewer.`);
+var NOTHING_FOUND = whole("I couldn't find a task, meeting or reference in this.");
+var tooLong = (issue2) => issue2.title.length + issue2.body.length > MAX_DUMP_CHARS;
+var nothingFound = (items, questions, created) => items + questions + created === 0;
+function questionBlock(questions) {
+  if (questions.length === 1 && !questions[0].about) return `${questions[0].question} ${REPLY}`;
+  return ["Questions:", ...questions.map((q) => `- ${q.about ? `${q.about}: ` : ""}${q.question}`), "", REPLY].join("\n");
+}
+
 // src/result.ts
 function endState(results, questions) {
   if (results.some((r) => !r.ok)) return "failed";
@@ -32265,7 +32280,7 @@ function line(r) {
 function resultComment(results, questions, state, read) {
   const parts = [];
   if (results.length) parts.push(["Todoman created:", ...results.map(line)].join("\n"));
-  if (questions.length) parts.push(["Questions:", ...questions.map((q) => `- ${q.about}: ${q.question}`), "", "Reply here to answer."].join("\n"));
+  if (questions.length) parts.push(questionBlock(questions));
   if (state === "processed") parts.push("To change anything, open a new dump.");
   parts.push(readMarker(read));
   return parts.join("\n\n");
@@ -32341,7 +32356,6 @@ function sanitize(text2) {
 }
 
 // src/validate.ts
-var MAX_ITEMS = 10;
 var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 var YEAR = 365 * 864e5;
 var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -32401,10 +32415,7 @@ function validate(output, ctx) {
   const o = isObj(output) ? output : {};
   const raw = Array.isArray(o.items) ? o.items : [];
   const questions = (Array.isArray(o.questions) ? o.questions : []).filter((q) => isObj(q) && typeof q.about === "string" && typeof q.question === "string").map((q) => ({ about: text(q.about), question: text(q.question) }));
-  if (raw.length === 0 || raw.length > MAX_ITEMS) {
-    const why = raw.length === 0 ? "I found nothing actionable in this dump." : `This dump has more than ${MAX_ITEMS} items.`;
-    return { items: [], questions: [{ about: "the dump", question: `${why} What should I do?` }, ...questions] };
-  }
+  if (raw.length > MAX_ITEMS) return { items: [], questions: [TOO_MANY] };
   const items = [];
   const seen = /* @__PURE__ */ new Set();
   raw.forEach((r, i) => {
@@ -32437,6 +32448,15 @@ async function processDump(p) {
     return;
   }
   await setState(p.gh, d.issue, PROCESSING);
+  const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d);
+  const state = endState(results, questions);
+  const read = Math.max(0, ...d.comments.map((c) => c.id));
+  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+  await setState(p.gh, d.issue, state);
+  if (state === "processed") await p.gh.closeCompleted(p.issue);
+  p.log(`Dump #${p.issue}: ${state}`);
+}
+async function parseAndCreate(p, d) {
   const [{ items: created, markers }, labels, peopleText] = await Promise.all([
     createdItems(p.gh, p.repo, d),
     p.gh.labelNames(),
@@ -32469,12 +32489,7 @@ async function processDump(p) {
       results.push({ type: item.type, ok: false, title, reason: "creating it failed" });
     }
   }
-  const state = endState(results, questions);
-  const read = Math.max(0, ...d.comments.map((c) => c.id));
-  await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-  await setState(p.gh, d.issue, state);
-  if (state === "processed") await p.gh.closeCompleted(p.issue);
-  p.log(`Dump #${p.issue}: ${state}`);
+  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
 }
 
 // src/secrets.ts
