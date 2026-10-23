@@ -18341,12 +18341,12 @@ var require_eventsource_stream = __commonJS({
       }
       return true;
     }
-    function isFieldName(line2, length, field) {
+    function isFieldName(line, length, field) {
       if (length !== field.length) {
         return false;
       }
       for (let i = 0; i < length; i++) {
-        if (line2[i] !== field[i]) {
+        if (line[i] !== field[i]) {
           return false;
         }
       }
@@ -18492,31 +18492,31 @@ var require_eventsource_stream = __commonJS({
        * @param {Buffer} line
        * @param {EventSourceStreamEvent} event
        */
-      parseLine(line2, event) {
-        if (line2.length === 0) {
+      parseLine(line, event) {
+        if (line.length === 0) {
           return;
         }
-        const colonPosition = line2.indexOf(COLON);
+        const colonPosition = line.indexOf(COLON);
         if (colonPosition === 0) {
           return;
         }
-        let fieldLength = line2.length;
-        let valueStart = line2.length;
+        let fieldLength = line.length;
+        let valueStart = line.length;
         if (colonPosition !== -1) {
           fieldLength = colonPosition;
           valueStart = colonPosition + 1;
-          if (line2[valueStart] === SPACE) {
+          if (line[valueStart] === SPACE) {
             ++valueStart;
           }
         }
-        if (isFieldName(line2, fieldLength, DATA)) {
+        if (isFieldName(line, fieldLength, DATA)) {
           if (this.maxEventSize > 0 && this.dataLineCount >= this.maxDataLines) {
             throw createMaxEventSizeExceededError();
           }
-          const valueBytes = line2.length - valueStart;
+          const valueBytes = line.length - valueStart;
           const dataSize = this.eventFieldSizes.data + (event.data === void 0 ? 0 : 1) + valueBytes;
           this.setEventFieldSize("data", dataSize);
-          const value = line2.toString("utf8", valueStart);
+          const value = line.toString("utf8", valueStart);
           if (event.data === void 0) {
             event.data = value;
           } else {
@@ -18526,24 +18526,24 @@ ${value}`;
           this.dataLineCount++;
           return;
         }
-        if (isFieldName(line2, fieldLength, RETRY2)) {
-          if (isASCIINumberBytes(line2, valueStart)) {
-            this.setEventFieldSize("retry", line2.length - valueStart);
-            event.retry = line2.toString("utf8", valueStart);
+        if (isFieldName(line, fieldLength, RETRY2)) {
+          if (isASCIINumberBytes(line, valueStart)) {
+            this.setEventFieldSize("retry", line.length - valueStart);
+            event.retry = line.toString("utf8", valueStart);
           }
           return;
         }
-        if (isFieldName(line2, fieldLength, ID)) {
-          if (isValidLastEventIdBytes(line2, valueStart)) {
-            this.setEventFieldSize("id", line2.length - valueStart);
-            event.id = line2.toString("utf8", valueStart);
+        if (isFieldName(line, fieldLength, ID)) {
+          if (isValidLastEventIdBytes(line, valueStart)) {
+            this.setEventFieldSize("id", line.length - valueStart);
+            event.id = line.toString("utf8", valueStart);
           }
           return;
         }
-        if (isFieldName(line2, fieldLength, EVENT)) {
-          if (valueStart < line2.length) {
-            this.setEventFieldSize("event", line2.length - valueStart);
-            event.event = line2.toString("utf8", valueStart);
+        if (isFieldName(line, fieldLength, EVENT)) {
+          if (valueStart < line.length) {
+            this.setEventFieldSize("event", line.length - valueStart);
+            event.event = line.toString("utf8", valueStart);
           }
         }
       }
@@ -19416,13 +19416,13 @@ var require_directives = __commonJS({
        * @param onError - May be called even if the action was successful
        * @returns `true` on success
        */
-      add(line2, onError) {
+      add(line, onError) {
         if (this.atNextDocument) {
           this.yaml = { explicit: _Directives.defaultYaml.explicit, version: "1.1" };
           this.tags = Object.assign({}, _Directives.defaultTags);
           this.atNextDocument = false;
         }
-        const parts = line2.trim().split(/[ \t]+/);
+        const parts = line.trim().split(/[ \t]+/);
         const name = parts.shift();
         switch (name) {
           case "%TAG": {
@@ -21019,9 +21019,9 @@ var require_stringifyCollection = __commonJS({
       } else {
         str2 = lines[0];
         for (let i = 1; i < lines.length; ++i) {
-          const line2 = lines[i];
-          str2 += line2 ? `
-${indent}${line2}` : "\n";
+          const line = lines[i];
+          str2 += line ? `
+${indent}${line}` : "\n";
         }
       }
       if (comment) {
@@ -21079,7 +21079,7 @@ ${indent}${line2}` : "\n";
           str2 += ",";
         } else if (ctx.options.trailingComma) {
           if (ctx.options.lineWidth > 0) {
-            reqNewline || (reqNewline = lines.reduce((sum, line2) => sum + line2.length + 2, 2) + (str2.length + 2) > ctx.options.lineWidth);
+            reqNewline || (reqNewline = lines.reduce((sum, line) => sum + line.length + 2, 2) + (str2.length + 2) > ctx.options.lineWidth);
           }
           if (reqNewline) {
             str2 += ",";
@@ -21095,14 +21095,14 @@ ${indent}${line2}` : "\n";
         return start + end;
       } else {
         if (!reqNewline) {
-          const len = lines.reduce((sum, line2) => sum + line2.length + 2, 2);
+          const len = lines.reduce((sum, line) => sum + line.length + 2, 2);
           reqNewline = ctx.options.lineWidth > 0 && len > ctx.options.lineWidth;
         }
         if (reqNewline) {
           let str2 = start;
-          for (const line2 of lines)
-            str2 += line2 ? `
-${indentStep}${indent}${line2}` : "\n";
+          for (const line of lines)
+            str2 += line ? `
+${indentStep}${indent}${line}` : "\n";
           return `${str2}
 ${indent}${end}`;
         } else {
@@ -22845,10 +22845,10 @@ var require_errors2 = __commonJS({
       if (error2.pos[0] === -1)
         return;
       error2.linePos = error2.pos.map((pos) => lc.linePos(pos));
-      const { line: line2, col } = error2.linePos[0];
-      error2.message += ` at line ${line2}, column ${col}`;
+      const { line, col } = error2.linePos[0];
+      error2.message += ` at line ${line}, column ${col}`;
       let ci = col - 1;
-      let lineStr = src.substring(lc.lineStarts[line2 - 1], lc.lineStarts[line2]).replace(/[\n\r]+$/, "");
+      let lineStr = src.substring(lc.lineStarts[line - 1], lc.lineStarts[line]).replace(/[\n\r]+$/, "");
       if (ci >= 60 && lineStr.length > 80) {
         const trimStart = Math.min(ci - 39, lineStr.length - 79);
         lineStr = "\u2026" + lineStr.substring(trimStart);
@@ -22856,8 +22856,8 @@ var require_errors2 = __commonJS({
       }
       if (lineStr.length > 80)
         lineStr = lineStr.substring(0, 79) + "\u2026";
-      if (line2 > 1 && /^ *$/.test(lineStr.substring(0, ci))) {
-        let prev = src.substring(lc.lineStarts[line2 - 2], lc.lineStarts[line2 - 1]);
+      if (line > 1 && /^ *$/.test(lineStr.substring(0, ci))) {
+        let prev = src.substring(lc.lineStarts[line - 2], lc.lineStarts[line - 1]);
         if (prev.length > 80)
           prev = prev.substring(0, 79) + "\u2026\n";
         lineStr = prev + lineStr;
@@ -22865,7 +22865,7 @@ var require_errors2 = __commonJS({
       if (/[^ ]/.test(lineStr)) {
         let count = 1;
         const end = error2.linePos[1];
-        if (end?.line === line2 && end.col > col) {
+        if (end?.line === line && end.col > col) {
           count = Math.max(1, Math.min(end.col - col, 80 - ci));
         }
         const pointer = " ".repeat(ci) + "^".repeat(count);
@@ -23814,8 +23814,8 @@ var require_resolve_flow_scalar = __commonJS({
       return unfoldLines(source.slice(1, -1)).replace(/''/g, "'");
     }
     function unfoldLines(source) {
-      const line2 = /(.*?)\r?\n/sy;
-      let match = line2.exec(source);
+      const line = /(.*?)\r?\n/sy;
+      let match = line.exec(source);
       if (!match)
         return source;
       let trimEnd, trimBoth;
@@ -23828,8 +23828,8 @@ var require_resolve_flow_scalar = __commonJS({
       }
       let res = match[1].replace(trimEnd, "");
       let sep2 = " ";
-      let pos = line2.lastIndex;
-      while (match = line2.exec(source)) {
+      let pos = line.lastIndex;
+      while (match = line.exec(source)) {
         const lm = match[1].replace(trimBoth, "");
         if (lm === "") {
           if (sep2 === "\n")
@@ -23840,7 +23840,7 @@ var require_resolve_flow_scalar = __commonJS({
           res += sep2 + lm;
           sep2 = " ";
         }
-        pos = line2.lastIndex;
+        pos = line.lastIndex;
       }
       const last = /[ \t]*(.*)/sy;
       last.lastIndex = pos;
@@ -24970,40 +24970,40 @@ var require_lexer = __commonJS({
         }
       }
       *parseStream() {
-        let line2 = this.getLine();
-        if (line2 === null)
+        let line = this.getLine();
+        if (line === null)
           return this.setNext("stream");
-        if (line2[0] === cst.BOM) {
+        if (line[0] === cst.BOM) {
           yield* this.pushCount(1);
-          line2 = line2.substring(1);
+          line = line.substring(1);
         }
-        if (line2[0] === "%") {
-          let dirEnd = line2.length;
-          let cs = line2.indexOf("#");
+        if (line[0] === "%") {
+          let dirEnd = line.length;
+          let cs = line.indexOf("#");
           while (cs !== -1) {
-            const ch = line2[cs - 1];
+            const ch = line[cs - 1];
             if (ch === " " || ch === "	") {
               dirEnd = cs - 1;
               break;
             } else {
-              cs = line2.indexOf("#", cs + 1);
+              cs = line.indexOf("#", cs + 1);
             }
           }
           while (true) {
-            const ch = line2[dirEnd - 1];
+            const ch = line[dirEnd - 1];
             if (ch === " " || ch === "	")
               dirEnd -= 1;
             else
               break;
           }
           const n = (yield* this.pushCount(dirEnd)) + (yield* this.pushSpaces(true));
-          yield* this.pushCount(line2.length - n);
+          yield* this.pushCount(line.length - n);
           this.pushNewline();
           return "stream";
         }
         if (this.atLineEnd()) {
           const sp = yield* this.pushSpaces(true);
-          yield* this.pushCount(line2.length - sp);
+          yield* this.pushCount(line.length - sp);
           yield* this.pushNewline();
           return "stream";
         }
@@ -25044,13 +25044,13 @@ var require_lexer = __commonJS({
       }
       *parseDocument() {
         yield* this.pushSpaces(true);
-        const line2 = this.getLine();
-        if (line2 === null)
+        const line = this.getLine();
+        if (line === null)
           return this.setNext("doc");
         let n = yield* this.pushIndicators();
-        switch (line2[n]) {
+        switch (line[n]) {
           case "#":
-            yield* this.pushCount(line2.length - n);
+            yield* this.pushCount(line.length - n);
           // fallthrough
           case void 0:
             yield* this.pushNewline();
@@ -25075,7 +25075,7 @@ var require_lexer = __commonJS({
           case ">":
             n += yield* this.parseBlockScalarHeader();
             n += yield* this.pushSpaces(true);
-            yield* this.pushCount(line2.length - n);
+            yield* this.pushCount(line.length - n);
             yield* this.pushNewline();
             return yield* this.parseBlockScalar();
           default:
@@ -25095,11 +25095,11 @@ var require_lexer = __commonJS({
           }
           sp += yield* this.pushSpaces(true);
         } while (nl + sp > 0);
-        const line2 = this.getLine();
-        if (line2 === null)
+        const line = this.getLine();
+        if (line === null)
           return this.setNext("flow");
-        if (indent !== -1 && indent < this.indentNext && line2[0] !== "#" || indent === 0 && (line2.startsWith("---") || line2.startsWith("...")) && isEmpty(line2[3])) {
-          const atFlowEndMarker = indent === this.indentNext - 1 && this.flowLevel === 1 && (line2[0] === "]" || line2[0] === "}");
+        if (indent !== -1 && indent < this.indentNext && line[0] !== "#" || indent === 0 && (line.startsWith("---") || line.startsWith("...")) && isEmpty(line[3])) {
+          const atFlowEndMarker = indent === this.indentNext - 1 && this.flowLevel === 1 && (line[0] === "]" || line[0] === "}");
           if (!atFlowEndMarker) {
             this.flowLevel = 0;
             yield cst.FLOW_END;
@@ -25107,17 +25107,17 @@ var require_lexer = __commonJS({
           }
         }
         let n = 0;
-        while (line2[n] === ",") {
+        while (line[n] === ",") {
           n += yield* this.pushCount(1);
           n += yield* this.pushSpaces(true);
           this.flowKey = false;
         }
         n += yield* this.pushIndicators();
-        switch (line2[n]) {
+        switch (line[n]) {
           case void 0:
             return "flow";
           case "#":
-            yield* this.pushCount(line2.length - n);
+            yield* this.pushCount(line.length - n);
             return "flow";
           case "{":
           case "[":
@@ -27562,12 +27562,12 @@ var Summary = class {
    * @returns {Summary} summary instance
    */
   addTable(rows) {
-    const tableBody = rows.map((row) => {
-      const cells = row.map((cell) => {
-        if (typeof cell === "string") {
-          return this.wrap("td", cell);
+    const tableBody = rows.map((row2) => {
+      const cells = row2.map((cell2) => {
+        if (typeof cell2 === "string") {
+          return this.wrap("td", cell2);
         }
-        const { header, data, colspan, rowspan } = cell;
+        const { header, data, colspan, rowspan } = cell2;
         const tag = header ? "th" : "td";
         const attrs = Object.assign(Object.assign({}, colspan && { colspan }), rowspan && { rowspan });
         return this.wrap(tag, data, attrs);
@@ -32473,6 +32473,15 @@ var GOOGLE = {
   auth: "the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.",
   failed: "a Google Calendar request failed. If it keeps failing, check the Google Workspace status page."
 };
+var ItemError = class extends Error {
+  constructor(cause, note) {
+    super(note);
+    this.cause = cause;
+    this.note = note;
+  }
+  cause;
+  note;
+};
 function failureMessage(e) {
   if (e instanceof ClaudeError) return CLAUDE[e.kind];
   if (e instanceof GoogleError) return GOOGLE[e.kind];
@@ -32547,6 +32556,7 @@ ${utc}`).digest());
 }
 
 // src/handlers/meeting.ts
+var EVENT_EXISTS = "the calendar event exists and invites were sent";
 var SUMMARY_PROMPT = "Add the meeting summary as a comment";
 var meetingHandler = {
   type: "meeting",
@@ -32565,7 +32575,7 @@ var meetingHandler = {
       description: item.agenda
     });
     const title = `Meeting: ${item.title}`;
-    if (ev.status === "deleted") return { title, details: ["the calendar event was deleted"] };
+    if (ev.status === "deleted") return { title, details: ["the calendar event was deleted"], labels: [] };
     const weekday = new Intl.DateTimeFormat("en-US", { timeZone: ctx.tz, weekday: "short" }).format(start);
     const date = `${weekday} ${localDate(start, ctx.tz)}`;
     const time = `${localTime(start, ctx.tz)}\u2013${localTime(end, ctx.tz)} ${ctx.tz}`;
@@ -32584,12 +32594,14 @@ var meetingHandler = {
       itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, start: start.toISOString() }),
       SUMMARY_PROMPT
     ].filter(Boolean).join("\n\n");
-    const issue2 = await ctx.gh.createIssue({ title, body, labels: ["meeting"], assignees: [ctx.owner] });
+    const issue2 = await ctx.gh.createIssue({ title, body, labels: ["meeting"], assignees: [ctx.owner] }).catch((e) => {
+      throw ev.status === "existing" ? new ItemError(e, EVENT_EXISTS) : e;
+    });
     const details = [`${date} ${time}`, duration, `invited: ${invited}`, ...item.skipped];
     await ctx.calendar.describeEvent(id, [item.agenda, `Meeting issue: ${issue2.url}`].filter(Boolean).join("\n\n")).catch(() => {
       details.push("the calendar event does not link this issue");
     });
-    return { title: issue2.title, url: issue2.url, details };
+    return { title: issue2.title, url: issue2.url, details, labels: issue2.labels };
   }
 };
 
@@ -32601,7 +32613,7 @@ var taskHandler = {
     const due = item.due ? `Due: ${item.due}` : "";
     const body = [item.body, due, `Source dump: ${ctx.dump.url}`, itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key })].filter(Boolean).join("\n\n");
     const issue2 = await ctx.gh.createIssue({ title: item.title, body, labels: ["task", ...item.labels], assignees: [ctx.owner] });
-    return { title: issue2.title, url: issue2.url, details: due ? [due] : [] };
+    return { title: issue2.title, url: issue2.url, details: due ? [due] : [], labels: issue2.labels };
   }
 };
 
@@ -32621,7 +32633,7 @@ async function addNote(ctx, issue2, ref, note) {
     const marker = itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, ref });
     await ctx.gh.comment(issue2.number, [note, `Source dump: ${ctx.dump.url}`, marker].join("\n\n"));
   }
-  return { title: issue2.title, url: issue2.url, details: [`added note to existing #${issue2.number}`] };
+  return { title: issue2.title, url: issue2.url, details: [`added note to existing #${issue2.number}`], labels: issue2.labels };
 }
 async function repoLabel(ctx, r) {
   const name = `repo:${r.owner}/${r.repo}`.slice(0, LABEL_MAX);
@@ -32656,7 +32668,7 @@ var trackingHandler = {
     const labels = ["tracking", ...await repoLabel(ctx, r)];
     const issue2 = await ctx.gh.createIssue({ title, body, labels, assignees: [ctx.owner] });
     const access2 = ext.access ? [] : [`access missing: no read token for ${r.owner} can read ${ref}, so only the reference is shown`];
-    return { title: issue2.title, url: issue2.url, details: access2 };
+    return { title: issue2.title, url: issue2.url, details: access2, labels: issue2.labels };
   }
 };
 
@@ -32705,15 +32717,21 @@ function endState(results, questions) {
   if (results.some((r) => !r.ok)) return "failed";
   return questions.length ? "needs-info" : "processed";
 }
-function line(r) {
-  if (!r.ok) return `- ${r.type}: ${r.title} \u2014 not created: ${r.reason}`;
-  const details = r.created.details.length ? ` \u2014 ${r.created.details.join("; ")}` : "";
-  const title = r.created.url ? `[${r.created.title}](${r.created.url})` : r.created.title;
-  return `- ${r.type}: ${title}${details}`;
+var cell = (s) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/[|[\]]/g, (c) => `\\${c}`);
+var codes = (labels) => labels.map((l) => l.includes("`") ? cell(l) : `\`${l.replace(/\|/g, "\\|")}\``).join(" ") || "\u2014";
+function row(r) {
+  if (!r.ok) {
+    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join("; ");
+    return `| ${cell(r.type)} | ${cell(r.title)} | \u2014 | ${cell(details)} |`;
+  }
+  const c = r.created;
+  const title = c.url ? `[${cell(c.title)}](${c.url})` : cell(c.title);
+  return `| ${cell(r.type)} | ${title} | ${codes(c.labels)} | ${cell(c.details.join("; ")) || "\u2014"} |`;
 }
+var table = (results) => ["| Type | Item | Labels | Details |", "| --- | --- | --- | --- |", ...results.map(row)].join("\n");
 function resultComment(results, questions, state, read) {
   const parts = [];
-  if (results.length) parts.push(["Todoman created:", ...results.map(line)].join("\n"));
+  if (results.length) parts.push(table(results));
   if (questions.length) parts.push(questionBlock(questions));
   if (state === "processed") parts.push("To change anything, open a new dump.");
   if (state === "failed") parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
@@ -32907,13 +32925,15 @@ async function parseAndCreate(p, d, at) {
     const title = "title" in item ? item.title : item.type === "tracking" ? item.ref : `${item.from} \u2013 ${item.to}`;
     const handler2 = (p.handlers ?? HANDLERS).find((h) => h.type === item.type);
     if (!handler2) {
-      results.push({ type: item.type, ok: false, title, reason: "this item type is not supported yet" });
+      results.push({ type: item.type, ok: false, title, reason: `failed while ${STEPS.create}: this item type is not supported yet` });
       continue;
     }
     try {
       results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
-      results.push({ type: item.type, ok: false, title, reason: failureMessage(e) });
+      const note = e instanceof ItemError ? e.note : "";
+      const reason = `failed while ${STEPS.create}: ${failureMessage(e instanceof ItemError ? e.cause : e)}`;
+      results.push({ type: item.type, ok: false, title, reason, note });
     }
   }
   return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };

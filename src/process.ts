@@ -1,6 +1,6 @@
 import type { ClaudeRequest } from './claude.js';
 import { createdItems, PROCESSING, readDump, setState, shouldProcess, thread, type CreatedItem, type Dump } from './dump.js';
-import { CANCELLED, failDump, failureComment, failureMessage, STEPS, type Step } from './failure.js';
+import { CANCELLED, failDump, failureComment, failureMessage, ItemError, STEPS, type Step } from './failure.js';
 import type { ExternalReader } from './external.js';
 import type { ProcessGh } from './github.js';
 import type { Calendar } from './google.js';
@@ -113,13 +113,15 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Prom
     const title = 'title' in item ? item.title : item.type === 'tracking' ? item.ref : `${item.from} – ${item.to}`;
     const handler = (p.handlers ?? HANDLERS).find((h) => h.type === item.type);
     if (!handler) {
-      results.push({ type: item.type, ok: false, title, reason: 'this item type is not supported yet' });
+      results.push({ type: item.type, ok: false, title, reason: `failed while ${STEPS.create}: this item type is not supported yet` });
       continue;
     }
     try {
       results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
-      results.push({ type: item.type, ok: false, title, reason: failureMessage(e) }); // fixed text: never an error body
+      const note = e instanceof ItemError ? e.note : '';
+      const reason = `failed while ${STEPS.create}: ${failureMessage(e instanceof ItemError ? e.cause : e)}`; // fixed text: never an error body
+      results.push({ type: item.type, ok: false, title, reason, note });
     }
   }
   return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };

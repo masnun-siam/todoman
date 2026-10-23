@@ -53,7 +53,7 @@ function fakeGh(issue: Issue, comments: IssueComment[] = [], extra: { since?: Da
   return { gh, writes };
 }
 
-const task: ItemHandler = { type: 'task', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/9', details: ['Due: 2026-10-22'] }) };
+const task: ItemHandler = { type: 'task', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/9', details: ['Due: 2026-10-22'], labels: ['task'] }) };
 const broken: ItemHandler = { type: 'task', create: async () => { throw new Error('ghp_SECRET boom'); } };
 
 async function run(gh: ProcessGh, output: unknown, handlers = [task], calendar = {} as ProcessDeps['calendar']) {
@@ -66,7 +66,7 @@ const milk = { items: [{ type: 'task', title: 'Buy milk', due: '2026-10-22' }], 
 const comments = (w: string[]) => w.filter((x) => x.startsWith('comment#'));
 
 describe('end state (FR-6)', () => {
-  const ok = { type: 'task', ok: true as const, created: { title: 't', url: 'u', details: [] } };
+  const ok = { type: 'task', ok: true as const, created: { title: 't', url: 'u', details: [], labels: [] } };
   const bad = { type: 'task', ok: false as const, title: 't', reason: 'r' };
   const q = [{ about: 'a', question: 'b' }];
   it.each([
@@ -118,7 +118,7 @@ describe('processDump', () => {
     expect(writes[0]).toBe('+todoman:processing#5');
     const [c] = comments(writes);
     expect(comments(writes)).toHaveLength(1);
-    expect(c).toContain('- task: [Buy milk](https://github.com/x/9) — Due: 2026-10-22');
+    expect(c).toContain('| task | [Buy milk](https://github.com/x/9) | `task` | Due: 2026-10-22 |');
     expect(c).toContain('To change anything, open a new dump.');
     expect(c).toContain(readMarker(3));
     expect(writes.slice(-3)).toEqual(['+processed#5', '-todoman:processing#5', 'close#5']);
@@ -135,7 +135,7 @@ describe('processDump', () => {
   it('assigns keys after the highest already used for the dump', async () => {
     const made = dumpIssue({ number: 9, author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i3' }) });
     const keys: string[] = [];
-    const spy: ItemHandler = { type: 'task', create: async (_i, ctx) => (keys.push(ctx.key), { title: 't', url: 'u', details: [] }) };
+    const spy: ItemHandler = { type: 'task', create: async (_i, ctx) => (keys.push(ctx.key), { title: 't', url: 'u', details: [], labels: [] }) };
     const { gh } = fakeGh(dumpIssue(), [], { issues: [made] });
     await run(gh, { items: [{ type: 'task', title: 'A' }, { type: 'task', title: 'B' }], questions: [] }, [spy]);
     expect(keys).toEqual(['i4', 'i5']);
@@ -153,7 +153,7 @@ describe('processDump', () => {
   it('a failed item gives failed, open, and never posts the error text', async () => {
     const { gh, writes } = fakeGh(dumpIssue());
     await run(gh, milk, [broken]);
-    expect(comments(writes)[0]).toContain('Buy milk — not created: an unexpected error occurred');
+    expect(comments(writes)[0]).toContain('| task | Buy milk | — | not created: failed while creating items: an unexpected error occurred');
     expect(comments(writes)[0]).toContain(`Todoman failed while creating items. ${RETRY}`);
     expect(writes.join()).not.toContain('ghp_SECRET');
     expect(writes).toContain('+failed#5');
@@ -187,7 +187,7 @@ describe('processDump', () => {
   it('skips a returned task matching one already created, without using a key', async () => {
     const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
     const keys: string[] = [];
-    const spy: ItemHandler = { type: 'task', create: async (_i, ctx) => (keys.push(ctx.key), { title: 't', url: 'u', details: [] }) };
+    const spy: ItemHandler = { type: 'task', create: async (_i, ctx) => (keys.push(ctx.key), { title: 't', url: 'u', details: [], labels: [] }) };
     const { gh } = fakeGh(dumpIssue(), [], { issues: [made] });
     await run(gh, { items: [{ type: 'task', title: 'buy  MILK.' }, { type: 'task', title: 'Call bank' }], questions: [] }, [spy]);
     expect(keys).toEqual(['i2']);
@@ -199,7 +199,7 @@ describe('processDump', () => {
   });
   it('"buy milk and meeting with asif" creates exactly one Buy milk across the first run and the reply run (FR-6, FR-8)', async () => {
     const issues: Issue[] = [];
-    const meeting: ItemHandler = { type: 'meeting', create: async () => ({ title: 'Meeting: Sync with Asif', url: 'https://github.com/x/m', details: [] }) };
+    const meeting: ItemHandler = { type: 'meeting', create: async () => ({ title: 'Meeting: Sync with Asif', url: 'https://github.com/x/m', details: [], labels: [] }) };
     const handlers = [taskHandler, meeting];
     const first = fakeGh(dumpIssue({ title: 'buy milk and meeting with asif' }), [], { issues });
     await run(first.gh, { items: [{ type: 'task', title: 'Buy milk' }], questions: [{ about: 'Meeting with Asif', question: 'When is the meeting?' }] }, handlers);
@@ -224,7 +224,7 @@ describe('processDump tracking (FR-2, FR-5)', () => {
     await run(gh, { items: [{ type: 'task', title: 'Call the bank' }, tracking], questions: [] }, [taskHandler, trackingHandler]);
     expect(writes.filter((w) => w.startsWith('create:'))).toEqual(['create:Call the bank', 'create:masnun-siam/meeting-manager#85']);
     expect(comments(writes)).toHaveLength(1);
-    expect(comments(writes)[0]).toContain('- tracking: [masnun-siam/meeting-manager#85](https://github.com/x/101) — access missing');
+    expect(comments(writes)[0]).toContain('| tracking | [masnun-siam/meeting-manager#85](https://github.com/x/101) |');
   });
   it('dumping the same reference twice gives one tracking issue and a note on it', async () => {
     const issues: Issue[] = [];
@@ -279,7 +279,7 @@ describe('failures (FR-9)', () => {
     await run(gh, { items: [...milk.items, meet], questions: [] }, [task, meeting]);
     const [c] = comments(writes);
     expect(c).toContain('Buy milk](https://github.com/x/9)');
-    expect(c).toContain('Sync with Asif — not created: the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.');
+    expect(c).toContain('| meeting | Sync with Asif | — | not created: failed while creating items: the Google authorization must be renewed: create a new refresh token and save it as the GOOGLE_REFRESH_TOKEN secret.');
     expect(c).toContain(RETRY);
     expect(writes).toContain('+failed#5');
   });
@@ -323,7 +323,7 @@ describe('failInterruptedRun (cancel or timeout, FR-9)', () => {
 });
 
 describe('processDump questions (FR-7)', () => {
-  const meetingStub: ItemHandler = { type: 'meeting', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/10', details: [] }) };
+  const meetingStub: ItemHandler = { type: 'meeting', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/10', details: [], labels: [] }) };
   const ask = { items: [], questions: [{ about: 'meeting with asif about prd review', question: 'When is the meeting?' }] };
   const meeting = { type: 'meeting', title: 'PRD review with Asif', start: '2026-10-26T11:00:00+06:00', durationMinutes: 60, attendees: ['asif'], agenda: 'PRD review' };
 
@@ -357,9 +357,30 @@ describe('processDump questions (FR-7)', () => {
     const reply = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(10, BOT, `When?\n${readMarker(0)}`), comment(12, OWNER, 'monday 11am')]);
     const { inputs } = await run(reply.gh, { items: [meeting], questions: [] }, [meetingStub]);
     expect(JSON.parse(inputs[0]).thread.at(-1)).toEqual({ from: 'owner', at: '2026-10-21T05:30:00Z', text: 'monday 11am' });
-    expect(comments(reply.writes)[0]).toContain('- meeting: [PRD review with Asif](https://github.com/x/10)');
+    expect(comments(reply.writes)[0]).toContain('| meeting | [PRD review with Asif](https://github.com/x/10) |');
     expect(reply.writes).toContain('-needs-info#5');
     expect(reply.writes.slice(-3)).toEqual(['+processed#5', '-todoman:processing#5', 'close#5']);
+  });
+  it('buy milk and meeting: the first comment has the task row then the question, the reply only the meeting row', async () => {
+    const first = fakeGh(dumpIssue({ title: 'buy milk and meeting with asif' }));
+    await run(first.gh, { items: milk.items, questions: ask.questions }, [task]);
+    const [c1] = comments(first.writes);
+    expect(c1).toContain('| task | [Buy milk](https://github.com/x/9) | `task` | Due: 2026-10-22 |');
+    expect(c1.indexOf('| task |')).toBeLessThan(c1.indexOf('When is the meeting?'));
+
+    const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
+    const reply = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'monday 11am')], { issues: [made] });
+    await run(reply.gh, { items: [milk.items[0], meeting], questions: [] }, [task, meetingStub]);
+    const [c2] = comments(reply.writes);
+    expect(c2).toContain('| meeting |');
+    expect(c2).not.toContain('Buy milk');
+  });
+  it('a task titled "a | b" is one row with its title intact', async () => {
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, { items: [{ type: 'task', title: 'a | b' }], questions: [] }, [task]);
+    const rows = comments(writes)[0].split('\n').filter((l) => l.includes('| task |'));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toContain('[a \\| b]');
   });
   it('"skip it" after the rest was created processes the dump', async () => {
     const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
@@ -410,7 +431,7 @@ describe('processDump meetings (FR-4, FR-4a, FR-8)', () => {
     expect(cal.inserts).toHaveLength(1);
     expect(writes).toContain('create:Meeting: PRD review with Asif');
     const [c] = comments(writes);
-    expect(c).toContain('- meeting: [Meeting: PRD review with Asif](https://github.com/x/100) — Mon 2026-10-26 11:00–12:00 Asia/Dhaka; 60 minutes; invited: Asif');
+    expect(c).toContain('| meeting | [Meeting: PRD review with Asif](https://github.com/x/100) | `meeting` | Mon 2026-10-26 11:00–12:00 Asia/Dhaka; 60 minutes; invited: Asif');
     expect(c).toContain('bob — not named in the dump, skipped');
     expect(c).toContain('rafi — not in people.yml, invite manually');
     expect(writes).toContain('close#5');
@@ -444,6 +465,6 @@ describe('processDump meetings (FR-4, FR-4a, FR-8)', () => {
     const calendar: Calendar = { insertEvent: async () => ({ status: 'deleted' }), describeEvent: async () => {} };
     await run(gh, { items: [prd], questions: [] }, [meetingHandler], calendar);
     expect(writes.filter((w) => w.startsWith('create:'))).toEqual([]);
-    expect(comments(writes)[0]).toContain('- meeting: Meeting: PRD review with Asif — the calendar event was deleted');
+    expect(comments(writes)[0]).toContain('| meeting | Meeting: PRD review with Asif | — | the calendar event was deleted |');
   });
 });

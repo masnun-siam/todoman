@@ -12,6 +12,6 @@ export const taskHandler: ItemHandler = {
       .filter(Boolean)
       .join('\n\n');
     const issue = await ctx.gh.createIssue({ title: item.title, body, labels: ['task', ...item.labels], assignees: [ctx.owner] });
-    return { title: issue.title, url: issue.url, details: due ? [due] : [] };
+    return { title: issue.title, url: issue.url, details: due ? [due] : [], labels: issue.labels };
   },
 };

@@ -3,6 +3,7 @@ import { eventId } from '../src/eventId.js';
 import type { Issue, ProcessGh } from '../src/github.js';
 import type { Calendar, EventResult, NewEvent } from '../src/google.js';
 import type { ItemContext } from '../src/handlers.js';
+import { ItemError } from '../src/failure.js';
 import { HANDLERS } from '../src/handlers.js';
 import { meetingHandler, SUMMARY_PROMPT } from '../src/handlers/meeting.js';
 import { BOT, parseItemMarkers } from '../src/markers.js';
@@ -98,6 +99,7 @@ describe('meetingHandler (FR-4)', () => {
       title: 'Meeting: PRD review with Asif',
       url: 'https://github.com/o/r/issues/11',
       details: ['Mon 2026-10-26 11:00–12:00 Asia/Dhaka', '60 minutes', 'invited: Asif', 'rafi — not in people.yml, invite manually'],
+      labels: ['meeting'],
     });
   });
 
@@ -112,7 +114,7 @@ describe('meetingHandler (FR-4)', () => {
 
   it('a deleted event is done: no issue, nothing recreated, and it says so', async () => {
     const { c, issues, described } = ctx({ event: { status: 'deleted' } });
-    expect(await meetingHandler.create(MEETING, c)).toEqual({ title: 'Meeting: PRD review with Asif', details: ['the calendar event was deleted'] });
+    expect(await meetingHandler.create(MEETING, c)).toEqual({ title: 'Meeting: PRD review with Asif', details: ['the calendar event was deleted'], labels: [] });
     expect(issues).toEqual([]);
     expect(described).toEqual([]);
   });
@@ -124,6 +126,14 @@ describe('meetingHandler (FR-4)', () => {
     await meetingHandler.create(MEETING, retry.c);
     expect(retry.events[0].id).toBe(first.events[0].id);
     expect(retry.issues).toHaveLength(1);
+  });
+
+  it('a retry that finds the event and then fails the issue says the event exists and invites were sent', async () => {
+    const retry = ctx({ failIssue: true, event: { ...LIVE, status: 'existing' } as EventResult });
+    const err = await meetingHandler.create(MEETING, retry.c).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ItemError);
+    expect((err as ItemError).note).toBe('the calendar event exists and invites were sent');
+    expect((err as ItemError).cause).toBeInstanceOf(Error);
   });
 
   it('creates no issue when the event fails, and reports a failed description link', async () => {
