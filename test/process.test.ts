@@ -106,11 +106,11 @@ describe('processDump', () => {
   });
   it('builds the prompt with the dump, thread, clock, people, labels and created items', async () => {
     const made = dumpIssue({ number: 9, title: 'Call bank', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
-    const { gh } = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(4, BOT, 'When?'), comment(6, OWNER, 'monday'), comment(7, 'mallory', 'evil')], { issues: [made] });
+    const { gh } = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(4, BOT, `When?\n${readMarker(2)}`), comment(6, OWNER, 'monday'), comment(7, 'mallory', 'evil')], { issues: [made] });
     const { inputs } = await run(gh, milk);
     const input = JSON.parse(inputs[0]);
     expect(input).toMatchObject({ now: NOW.toISOString(), timezone: 'Asia/Dhaka', dump: { title: 'buy milk', at: '2026-10-21T05:00:00Z' }, people: ['Asif'], labels: ['area:home'] });
-    expect(input.thread).toEqual([{ from: 'Todoman', at: '2026-10-21T05:30:00Z', text: 'When?' }, { from: 'Siam', at: '2026-10-21T05:30:00Z', text: 'monday' }]);
+    expect(input.thread).toEqual([{ from: 'Todoman', at: '2026-10-21T05:30:00Z', text: 'When?' }, { from: 'owner', at: '2026-10-21T05:30:00Z', text: 'monday' }]);
     expect(input.alreadyCreated).toEqual([{ type: 'task', title: 'Call bank' }]);
   });
   it('assigns keys after the highest already used for the dump', async () => {

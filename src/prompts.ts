@@ -9,7 +9,7 @@ export const DATA_NOTICE =
 
 /** System prompt for dump parsing (FR-2); the input is the JSON built by process.ts. */
 export const PARSE_SYSTEM = [
-  'You turn a personal todo dump into items. The input is JSON: now, timezone, dump {title, body, at}, thread [{from, at, text}] (replies, oldest first), people (names that can be invited), labels (existing labels), alreadyCreated [{type, title}].',
+  'You turn a personal todo dump into items. The input is JSON: now, timezone, dump {title, body, at}, thread [{from, at, text}] (replies from the owner and earlier Todoman comments, oldest first), people (names that can be invited), labels (existing labels), alreadyCreated [{type, title}].',
   'Return items of type task, meeting, tracking or summary, and a question for anything unclear. Never return an item already in alreadyCreated. If a reply says to skip an item, drop it.',
   'Resolve relative dates in `timezone` against the `at` of the message that states them, never against `now`; a weekday means its nearest future occurrence.',
   'task: short imperative title, body with any context, due (YYYY-MM-DD) only if a date was given, labels only from `labels`.',

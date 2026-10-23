@@ -93,7 +93,14 @@ export async function runClaude(r: ClaudeRequest, o: ClaudeOptions): Promise<unk
  * into the action's own folder on first use. Returns the `claude` binary path.
  */
 export function installClaude(actionPath: string): string {
+  const bin = join(actionPath, 'node_modules', '.bin', 'claude');
   // env holds no secrets: the CLI's postinstall must not see GitHub, Google or Claude tokens
-  execFileSync('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], { cwd: actionPath, env: { PATH: process.env.PATH, HOME: process.env.HOME }, stdio: 'ignore' });
-  return join(actionPath, 'node_modules', '.bin', 'claude');
+  const opts = { cwd: actionPath, env: { PATH: process.env.PATH, HOME: process.env.HOME }, stdio: 'ignore' as const, timeout: FIVE_MIN };
+  try {
+    execFileSync('npm', ['ci', '--omit=dev', '--no-audit', '--no-fund'], opts);
+    execFileSync(bin, ['--version'], opts); // a skipped postinstall leaves a stub that cannot run
+  } catch {
+    throw new Error('Could not install the Claude CLI'); // fixed text: never npm's output
+  }
+  return bin;
 }

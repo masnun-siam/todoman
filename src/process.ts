@@ -32,7 +32,7 @@ export function buildInput(d: Dump, owner: string, tz: string, now: Date, people
     now: now.toISOString(),
     timezone: tz,
     dump: { title: d.issue.title, body: d.issue.body, at: d.issue.createdAt },
-    thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? 'Todoman' : 'Siam', at: c.createdAt, text: c.body })),
+    thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? 'Todoman' : 'owner', at: c.createdAt, text: c.body.replace(/<!--[\s\S]*?-->/g, '').trim() })),
     people: people.map((p) => p.name),
     labels: labels.filter((l) => !TODOMAN_LABELS.has(l)),
     alreadyCreated: created.map((c) => ({ type: c.type, title: c.title })),
