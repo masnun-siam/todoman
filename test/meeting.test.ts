@@ -121,11 +121,19 @@ describe('meetingHandler (FR-4)', () => {
 
   it('a retry after the issue failed reuses the same event id', async () => {
     const first = ctx({ failIssue: true });
-    await expect(meetingHandler.create(MEETING, first.c)).rejects.toThrow('boom');
+    await expect(meetingHandler.create(MEETING, first.c)).rejects.toBeInstanceOf(ItemError);
     const retry = ctx({ event: { ...LIVE, status: 'existing' } as EventResult });
     await meetingHandler.create(MEETING, retry.c);
     expect(retry.events[0].id).toBe(first.events[0].id);
     expect(retry.issues).toHaveLength(1);
+  });
+
+  it('a first run that creates the event and then fails the issue says the event exists and invites were sent', async () => {
+    const first = ctx({ failIssue: true });
+    const err = await meetingHandler.create(MEETING, first.c).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ItemError);
+    expect((err as ItemError).note).toBe('The calendar event exists and invites were sent.');
+    expect((err as ItemError).cause).toBeInstanceOf(Error);
   });
 
   it('a retry that finds the event and then fails the issue says the event exists and invites were sent', async () => {
@@ -138,7 +146,9 @@ describe('meetingHandler (FR-4)', () => {
 
   it('creates no issue when the event fails, and reports a failed description link', async () => {
     const down = ctx({ failInsert: true });
-    await expect(meetingHandler.create(MEETING, down.c)).rejects.toThrow();
+    const err = await meetingHandler.create(MEETING, down.c).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ItemError);
     expect(down.issues).toEqual([]);
     const { c } = ctx({ failDescribe: true });
     expect((await meetingHandler.create(MEETING, c)).details).toContain('the calendar event does not link this issue');
