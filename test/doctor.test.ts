@@ -39,6 +39,13 @@ describe('doctor', () => {
     await doctor(b.gh);
     expect(b.created).toEqual([]);
   });
+  it('treats a label that differs only in case as existing', async () => {
+    const { gh, created } = stub({ labels: ['Task', 'PROCESSED'] });
+    const { lines, result } = await doctor(gh);
+    expect(created).toEqual(LABELS.map((l) => l.name).filter((n) => n !== 'task' && n !== 'processed'));
+    expect(result).toBe('ok');
+    expect(lines).toContain('PASS labels exist');
+  });
   it('passes when everything is right', async () => {
     const { lines, result } = await doctor(stub().gh);
     expect(result).toBe('ok');

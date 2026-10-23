@@ -32362,8 +32362,8 @@ function secretChecks(env, deps) {
   ];
 }
 async function ensureLabels(gh) {
-  const have = new Set(await gh.labelNames());
-  for (const l of LABELS) if (!have.has(l.name)) await gh.createLabel(l.name, l.color, l.description);
+  const have = new Set((await gh.labelNames()).map((n) => n.toLowerCase()));
+  for (const l of LABELS) if (!have.has(l.name.toLowerCase())) await gh.createLabel(l.name, l.color, l.description);
 }
 async function runDoctor(gh, log, checks = baseChecks, actionPath = process.env.GITHUB_ACTION_PATH ?? ".") {
   const ctx = { gh, template: (f) => readFileSync3(join2(actionPath, "templates", f), "utf8") };
