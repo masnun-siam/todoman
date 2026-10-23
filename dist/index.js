@@ -32326,6 +32326,21 @@ function isCreated(item, created) {
   return created.some((c) => c.type === item.type && normTitle(c.title) === title);
 }
 
+// src/questions.ts
+var MAX_ITEMS = 10;
+var MAX_DUMP_CHARS = 1e4;
+var REPLY = "Reply here to answer.";
+var whole = (question) => ({ about: "", question });
+var TOO_LONG = whole(`This dump is over ${MAX_DUMP_CHARS.toLocaleString("en-US")} characters, so I created nothing. Please split it into smaller dumps.`);
+var TOO_MANY = whole(`This dump has more than ${MAX_ITEMS} items, so I created nothing. Please split it into dumps of ${MAX_ITEMS} items or fewer.`);
+var NOTHING_FOUND = whole("I couldn't find a task, meeting or reference in this.");
+var tooLong = (issue2) => issue2.title.length + issue2.body.length > MAX_DUMP_CHARS;
+var nothingFound = (items, questions, created) => items + questions + created === 0;
+function questionBlock(questions) {
+  if (questions.length === 1 && !questions[0].about) return `${questions[0].question} ${REPLY}`;
+  return ["Questions:", ...questions.map((q) => `- ${q.about ? `${q.about}: ` : ""}${q.question}`), "", REPLY].join("\n");
+}
+
 // src/result.ts
 function endState(results, questions) {
   if (results.some((r) => !r.ok)) return "failed";
@@ -32339,7 +32354,7 @@ function line(r) {
 function resultComment(results, questions, state, read) {
   const parts = [];
   if (results.length) parts.push(["Todoman created:", ...results.map(line)].join("\n"));
-  if (questions.length) parts.push(["Questions:", ...questions.map((q) => `- ${q.about}: ${q.question}`), "", "Reply here to answer."].join("\n"));
+  if (questions.length) parts.push(questionBlock(questions));
   if (state === "processed") parts.push("To change anything, open a new dump.");
   if (state === "failed") parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
   parts.push(readMarker(read));
@@ -32416,7 +32431,6 @@ function sanitize(text2) {
 }
 
 // src/validate.ts
-var MAX_ITEMS = 10;
 var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 var YEAR = 365 * 864e5;
 var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -32476,10 +32490,7 @@ function validate(output, ctx) {
   const o = isObj(output) ? output : {};
   const raw = Array.isArray(o.items) ? o.items : [];
   const questions = (Array.isArray(o.questions) ? o.questions : []).filter((q) => isObj(q) && typeof q.about === "string" && typeof q.question === "string").map((q) => ({ about: text(q.about), question: text(q.question) }));
-  if (raw.length === 0 || raw.length > MAX_ITEMS) {
-    const why = raw.length === 0 ? "I found nothing actionable in this dump." : `This dump has more than ${MAX_ITEMS} items.`;
-    return { items: [], questions: [{ about: "the dump", question: `${why} What should I do?` }, ...questions] };
-  }
+  if (raw.length > MAX_ITEMS) return { items: [], questions: [TOO_MANY] };
   const items = [];
   const seen = /* @__PURE__ */ new Set();
   raw.forEach((r, i) => {
@@ -32505,7 +32516,56 @@ function buildInput(d, owner, tz, now, people, labels, created) {
     alreadyCreated: created.map((c) => ({ type: c.type, title: c.title }))
   });
 }
-async function createItems(p, d, items, created, markers) {
+async function processDump(p) {
+  const d = await readDump(p.gh, p.issue);
+  if (!shouldProcess(d, p.owner, p.now())) {
+    p.log("Nothing to process");
+    return;
+  }
+  await setState(p.gh, d.issue, PROCESSING);
+  const read = Math.max(0, ...d.comments.map((c) => c.id));
+  const at = { step: STEPS.read };
+  try {
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    at.step = STEPS.result;
+    const state = endState(results, questions);
+    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+    await setState(p.gh, d.issue, state);
+    if (state === "processed") await p.gh.closeCompleted(p.issue);
+    p.log(`Dump #${p.issue}: ${state}`);
+  } catch (e) {
+    await failDump(p.gh, d.issue, failureComment(at.step, failureMessage(e), read)).catch(() => void 0);
+    throw e;
+  }
+}
+async function failInterruptedRun(gh, n, log) {
+  const issue2 = await gh.getIssue(n);
+  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
+    log("Nothing to mark failed");
+    return;
+  }
+  await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
+  log(`Dump #${n}: failed`);
+}
+async function parseAndCreate(p, d, at) {
+  const [{ items: created, markers }, labels, peopleText] = await Promise.all([
+    createdItems(p.gh, p.repo, d),
+    p.gh.labelNames(),
+    p.gh.fileText("people.yml")
+  ]);
+  const people = peopleText !== null && parsePeople(peopleText) || [];
+  const now = p.now();
+  at.step = STEPS.parse;
+  const output = await p.claude({
+    model: MODELS.parse,
+    system: PARSE_SYSTEM,
+    schema: PARSER_SCHEMA,
+    input: buildInput(d, p.owner, p.tz, now, people, labels, created),
+    validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
+  });
+  const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
+  const { items, questions } = validate(output, { now, text: ownText, labels, people });
+  at.step = STEPS.create;
   const results = [];
   for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
@@ -32522,56 +32582,7 @@ async function createItems(p, d, items, created, markers) {
       results.push({ type: item.type, ok: false, title, reason: failureMessage(e) });
     }
   }
-  return results;
-}
-async function processDump(p) {
-  const d = await readDump(p.gh, p.issue);
-  if (!shouldProcess(d, p.owner, p.now())) {
-    p.log("Nothing to process");
-    return;
-  }
-  await setState(p.gh, d.issue, PROCESSING);
-  const read = Math.max(0, ...d.comments.map((c) => c.id));
-  let step = STEPS.read;
-  try {
-    const [{ items: created, markers }, labels, peopleText] = await Promise.all([
-      createdItems(p.gh, p.repo, d),
-      p.gh.labelNames(),
-      p.gh.fileText("people.yml")
-    ]);
-    const people = peopleText !== null && parsePeople(peopleText) || [];
-    const now = p.now();
-    step = STEPS.parse;
-    const output = await p.claude({
-      model: MODELS.parse,
-      system: PARSE_SYSTEM,
-      schema: PARSER_SCHEMA,
-      input: buildInput(d, p.owner, p.tz, now, people, labels, created),
-      validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
-    });
-    const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
-    const { items, questions } = validate(output, { now, text: ownText, labels, people });
-    step = STEPS.create;
-    const results = await createItems(p, d, items, created, markers);
-    step = STEPS.result;
-    const state = endState(results, questions);
-    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-    await setState(p.gh, d.issue, state);
-    if (state === "processed") await p.gh.closeCompleted(p.issue);
-    p.log(`Dump #${p.issue}: ${state}`);
-  } catch (e) {
-    await failDump(p.gh, d.issue, failureComment(step, failureMessage(e), read)).catch(() => void 0);
-    throw e;
-  }
-}
-async function failInterruptedRun(gh, n, log) {
-  const issue2 = await gh.getIssue(n);
-  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
-    log("Nothing to mark failed");
-    return;
-  }
-  await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
-  log(`Dump #${n}: failed`);
+  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
 }
 
 // src/secrets.ts

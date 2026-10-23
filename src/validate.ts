@@ -1,6 +1,7 @@
 import { daysBetween, isDate, parseWithOffset } from './dates.js';
 import { resolveInvitees, type Person } from './invitees.js';
 import { LABELS } from './labels.js';
+import { MAX_ITEMS, TOO_MANY } from './questions.js';
 import { sanitize } from './sanitize.js';
 
 export interface Question {
@@ -25,7 +26,6 @@ export interface ValidateContext {
   people: Person[];
 }
 
-export const MAX_ITEMS = 10;
 const TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
 const YEAR = 365 * 86_400_000;
 
@@ -99,10 +99,7 @@ export function validate(output: unknown, ctx: ValidateContext): Validated {
   const questions: Question[] = (Array.isArray(o.questions) ? o.questions : [])
     .filter((q): q is Raw => isObj(q) && typeof q.about === 'string' && typeof q.question === 'string')
     .map((q) => ({ about: text(q.about), question: text(q.question) }));
-  if (raw.length === 0 || raw.length > MAX_ITEMS) {
-    const why = raw.length === 0 ? 'I found nothing actionable in this dump.' : `This dump has more than ${MAX_ITEMS} items.`;
-    return { items: [], questions: [{ about: 'the dump', question: `${why} What should I do?` }, ...questions] };
-  }
+  if (raw.length > MAX_ITEMS) return { items: [], questions: [TOO_MANY] };
   const items: ValidItem[] = [];
   const seen = new Set<number>();
   raw.forEach((r: unknown, i) => {

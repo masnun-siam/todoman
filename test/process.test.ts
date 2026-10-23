@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
+import { ClaudeError } from '../src/claude.js';
 import { shouldProcess, type Dump } from '../src/dump.js';
+import { RETRY } from '../src/failure.js';
 import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
+import { GoogleError } from '../src/google.js';
 import type { ItemHandler } from '../src/handlers.js';
 import { taskHandler } from '../src/handlers/task.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
-import { ClaudeError } from '../src/claude.js';
-import { RETRY } from '../src/failure.js';
-import { GoogleError } from '../src/google.js';
 import { failInterruptedRun, processDump } from '../src/process.js';
 import { endState } from '../src/result.js';
 
@@ -282,5 +282,65 @@ describe('failInterruptedRun (cancel or timeout, FR-9)', () => {
     await failInterruptedRun(gh, 5, (l) => logs.push(l));
     expect(writes).toEqual([]);
     expect(logs).toEqual(['Nothing to mark failed']);
+  });
+});
+
+describe('processDump questions (FR-7)', () => {
+  const meetingStub: ItemHandler = { type: 'meeting', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/10', details: [] }) };
+  const ask = { items: [], questions: [{ about: 'meeting with asif about prd review', question: 'When is the meeting?' }] };
+  const meeting = { type: 'meeting', title: 'PRD review with Asif', start: '2026-10-26T11:00:00+06:00', durationMinutes: 60, attendees: ['asif'], agenda: 'PRD review' };
+
+  it('a dump over 10,000 characters creates nothing, never calls Claude and asks to split', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ body: 'x'.repeat(10_000) }));
+    const { inputs } = await run(gh, milk);
+    expect(inputs).toEqual([]);
+    expect(comments(writes)[0]).toContain('Please split it into smaller dumps. Reply here to answer.');
+    expect(writes).toContain('+needs-info#5');
+    expect(writes).not.toContain('close#5');
+  });
+  it('"asdf" goes to needs-info with the PRD wording', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ title: 'asdf' }));
+    await run(gh, { items: [], questions: [] });
+    expect(comments(writes)[0]).toBe(`comment#5:I couldn't find a task, meeting or reference in this. Reply here to answer.\n\n${readMarker(0)}`);
+    expect(writes).toContain('+needs-info#5');
+  });
+  it('more than 10 items creates nothing and asks to split', async () => {
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, { items: Array.from({ length: 11 }, () => milk.items[0]), questions: [] });
+    expect(comments(writes)[0]).toContain('more than 10 items, so I created nothing');
+    expect(comments(writes)[0]).not.toContain('Buy milk');
+    expect(writes).toContain('+needs-info#5');
+  });
+  it('asks when the meeting is, then the reply creates it and processes the dump', async () => {
+    const first = fakeGh(dumpIssue({ title: 'meeting with asif about prd review for 1 hour' }));
+    await run(first.gh, ask, [meetingStub]);
+    expect(comments(first.writes)[0]).toContain('- meeting with asif about prd review: When is the meeting?\n\nReply here to answer.');
+    expect(first.writes).toContain('+needs-info#5');
+
+    const reply = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(10, BOT, `When?\n${readMarker(0)}`), comment(12, OWNER, 'monday 11am')]);
+    const { inputs } = await run(reply.gh, { items: [meeting], questions: [] }, [meetingStub]);
+    expect(JSON.parse(inputs[0]).thread.at(-1)).toEqual({ from: 'owner', at: '2026-10-21T05:30:00Z', text: 'monday 11am' });
+    expect(comments(reply.writes)[0]).toContain('- meeting: [PRD review with Asif](https://github.com/x/10)');
+    expect(reply.writes).toContain('-needs-info#5');
+    expect(reply.writes.slice(-3)).toEqual(['+processed#5', '-todoman:processing#5', 'close#5']);
+  });
+  it('"skip it" after the rest was created processes the dump', async () => {
+    const made = dumpIssue({ number: 9, title: 'Buy milk', author: BOT, labels: ['task'], body: itemMarker({ repo: REPO, dump: 5, key: 'i1' }) });
+    const { gh, writes } = fakeGh(dumpIssue({ labels: ['needs-info'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'skip it')], { issues: [made] });
+    await run(gh, { items: [], questions: [] });
+    expect(comments(writes)[0]).toContain('To change anything, open a new dump.');
+    expect(writes).toContain('close#5');
+  });
+  it.each([
+    ['in the past', '2026-10-20T11:00:00+06:00'],
+    ['over 365 days ahead', '2027-10-22T11:00:00+06:00'],
+  ])('a meeting time %s goes to needs-info, clear items still created', async (_, start) => {
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, { items: [milk.items[0], { ...meeting, start }], questions: [] }, [task, meetingStub]);
+    const [c] = comments(writes);
+    expect(c).toContain('[Buy milk]');
+    expect(c).toContain('PRD review with Asif: ');
+    expect(c).not.toContain('https://github.com/x/10');
+    expect(writes).toContain('+needs-info#5');
   });
 });
