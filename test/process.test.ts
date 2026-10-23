@@ -19,6 +19,7 @@ const REPO = 'masnun-siam/todo-sandbox';
 const NOW = new Date('2026-10-21T06:00:00Z');
 const MIN = 60_000;
 const noAccess = (): ExternalReader => ({ readExternal: async () => ({ access: false }), readExternalActivity: async () => ({ access: false }) });
+const noSummary = (): never => { throw new Error('unused'); };
 
 const dumpIssue = (over: Partial<Issue> = {}): Issue => ({
   number: 5, title: 'buy milk', body: '', url: 'https://github.com/x/5', author: OWNER, state: 'open', labels: [], createdAt: '2026-10-21T05:00:00Z', ...over,
@@ -59,7 +60,7 @@ const broken: ItemHandler = { type: 'task', create: async () => { throw new Erro
 async function run(gh: ProcessGh, output: unknown, handlers = [task], calendar = {} as ProcessDeps['calendar']) {
   const inputs: string[] = [];
   const logs: string[] = [];
-  await processDump({ gh, calendar, external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
+  await processDump({ gh, calendar, external: noAccess, summarise: noSummary, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
   return { inputs, logs };
 }
 const milk = { items: [{ type: 'task', title: 'Buy milk', due: '2026-10-22' }], questions: [] };
@@ -232,7 +233,7 @@ describe('processDump tracking (FR-2, FR-5)', () => {
     const first = fakeGh(dumpIssue({ body }), [], { issues });
     await run(first.gh, { items: [tracking], questions: [] }, [trackingHandler]);
     const second = fakeGh(dumpIssue({ number: 6, body, createdAt: '2026-10-21T05:50:00Z' }), [], { issues });
-    await processDump({ gh: second.gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, repo: REPO, issue: 6, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [trackingHandler], log: () => undefined, claude: async () => ({ items: [tracking], questions: [] }) });
+    await processDump({ gh: second.gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, summarise: noSummary, repo: REPO, issue: 6, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [trackingHandler], log: () => undefined, claude: async () => ({ items: [tracking], questions: [] }) });
     expect(issues).toHaveLength(1);
     expect(second.writes.filter((w) => w.startsWith('create:'))).toEqual([]);
     expect(second.writes.filter((w) => w.startsWith('comment#100:'))).toHaveLength(1);
@@ -266,7 +267,7 @@ describe('failures (FR-9)', () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     if ('gh' in fail) gh.labelNames = async () => { throw fail.gh; };
     const claude = async () => { if ('claude' in fail) throw fail.claude; return milk; };
-    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
+    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, summarise: noSummary, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
     const [c, ...rest] = comments(writes);
     expect(rest).toEqual([]);
     expect(c).toContain(`Todoman failed while ${want}`);
@@ -277,7 +278,7 @@ describe('failures (FR-9)', () => {
   it('a failure comment that cannot be posted still leaves the dump failed, not processing', async () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     gh.comment = async () => { throw new Error('down'); };
-    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
+    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], external: noAccess, summarise: noSummary, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
     expect(writes).toEqual(['+todoman:processing#5', '+failed#5', '-todoman:processing#5']);
   });
   it('a revoked Google token fails the item with how to renew it, keeping the items created', async () => {
