@@ -1,5 +1,5 @@
 import type { Collected, CollectedIssue, Tracked } from './collect.js';
-import { addDays, localDate, localTime } from './dates.js';
+import { addDays, atLocal, localDate, localTime } from './dates.js';
 import { inPeriod, type Period } from './external.js';
 import { BOT } from './markers.js';
 import { sanitize } from './sanitize.js';
@@ -53,7 +53,7 @@ export function sections(c: Collected, p: Period, tz: string): Sections {
   const open = tasks.filter((i) => i.state === 'open');
   const overdue = (i: CollectedIssue): boolean => (dueOf(i) ?? today) < today;
   const byNumber = new Map(c.issues.map((i) => [i.number, i]));
-  const when = (i: CollectedIssue): string => (has(i, 'meeting') ? (i.start ?? '') : `${dueOf(i)}T00:00`);
+  const when = (i: CollectedIssue): number => Date.parse(has(i, 'meeting') ? (i.start ?? '') : atLocal(dueOf(i) ?? today, '00:00', tz));
   return {
     done: tasks.filter((i) => i.closedAt !== null && inPeriod(i.closedAt, p)),
     open: [...open.filter(overdue).sort((a, b) => (dueOf(a) ?? '').localeCompare(dueOf(b) ?? '')), ...open.filter((i) => !overdue(i))],
@@ -62,7 +62,7 @@ export function sections(c: Collected, p: Period, tz: string): Sections {
     next: [
       ...open.filter((i) => { const d = dueOf(i); return d !== undefined && d >= today && d < week; }),
       ...c.issues.filter((i) => has(i, 'meeting') && i.state === 'open' && i.start !== undefined && inPeriod(i.start, next)),
-    ].sort((a, b) => when(a).localeCompare(when(b))),
+    ].sort((a, b) => when(a) - when(b)),
     today,
     tz,
   };
@@ -98,7 +98,9 @@ export function toNotes(v: unknown): Notes {
   return { done: list(o.done), meetings: list(o.meetings), tracked: list(o.tracked) };
 }
 
-const link = (i: CollectedIssue): string => `[${sanitize(i.title).replace(/[[\]]/g, '\\$&')}](${i.url})`;
+/** Link text with backslashes and brackets escaped, so a title cannot close the link early. */
+const escape = (t: string): string => t.replace(/[\\[\]]/g, '\\$&');
+const link = (i: CollectedIssue): string => `[${escape(sanitize(i.title))}](${i.url})`;
 const noteFor = (notes: Note[], i: CollectedIssue): string | undefined => notes.find((n) => n.issue === i.number)?.note;
 const section = (title: string, lines: string[]): string => `## ${title}\n\n${lines.length ? lines.join('\n') : EMPTY}`;
 
@@ -108,7 +110,7 @@ function trackedLine({ issue, t }: Sections['tracked'][number], notes: Note[]): 
   const facts = [
     a.state,
     a.comments.length ? `${a.comments.length} new comment${a.comments.length === 1 ? '' : 's'}` : '',
-    ...a.mergedPrs.map((pr) => `merged [${pr.title.replace(/[[\]]/g, '\\$&')}](${pr.url})`),
+    ...a.mergedPrs.map((pr) => `merged [${escape(pr.title)}](${pr.url})`),
     noteFor(notes, issue) ?? '',
   ].filter(Boolean);
   return `- ${link(issue)} — ${facts.join('; ')}`;

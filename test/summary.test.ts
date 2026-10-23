@@ -32,8 +32,9 @@ interface World {
   comments?: Record<number, IssueComment[]>;
   activity?: Record<string, ExternalActivity>;
   claude?: unknown;
+  now?: Date;
 }
-function deps({ all, comments = {}, activity = {}, claude = { done: [], meetings: [], tracked: [] } }: World) {
+function deps({ all, comments = {}, activity = {}, claude = { done: [], meetings: [], tracked: [] }, now = NOW }: World) {
   const created: { title: string; body: string; labels: string[]; assignees: string[] }[] = [];
   const logs: string[] = [];
   const d: SummaryDeps = {
@@ -49,7 +50,7 @@ function deps({ all, comments = {}, activity = {}, claude = { done: [], meetings
     reader: { readExternalActivity: async (r) => activity[`${r.owner}/${r.repo}#${r.number}`] ?? { access: false } },
     owner: OWNER,
     tz: TZ,
-    now: () => NOW,
+    now: () => now,
     claude: vi.fn<(r: ClaudeRequest) => Promise<unknown>>(async () => claude),
     log: (l) => logs.push(l),
   };
@@ -99,6 +100,40 @@ describe('weeklySummary', () => {
     expect(created).toEqual([]);
     expect(d.claude).not.toHaveBeenCalled();
     expect(logs).toEqual([`Weekly summary already exists: ${url(6)}`]);
+  });
+
+  it.each([
+    ['23h59m59s', '2026-10-21T12:00:01Z', 0],
+    ['exactly 24 hours', '2026-10-21T12:00:00Z', 1],
+  ])('the re-run check at %s earlier', async (_, createdAt, n) => {
+    const { d, created } = deps({ all: [weekly(6, createdAt, '2026-10-14T12:00:00.000Z', createdAt)] });
+    await weeklySummary(d);
+    expect(created).toHaveLength(n);
+  });
+
+  it('judges overdue and the next 7 days by the local date when it differs from the UTC one', async () => {
+    const due = (n: number, date: string) => issue(n, { body: `Due: ${date}`, updatedAt: BEFORE });
+    const { d, created } = deps({
+      now: new Date('2026-10-22T20:00:00.000Z'), // Fri 02:00 in Asia/Dhaka
+      all: [due(1, '2026-10-22'), due(2, '2026-10-23'), due(3, '2026-10-25'), meeting(4, '2026-10-24T20:00:00.000Z', { updatedAt: BEFORE }), meeting(5, '2026-10-23T05:00:00.000Z', { updatedAt: BEFORE })],
+    });
+    await weeklySummary(d);
+    const body = created[0].body;
+    expect(created[0].title).toBe('Weekly summary: 2026-10-16 – 2026-10-23');
+    expect(section(body, 'Open').split('\n')[0]).toBe(`- [Task 1](${url(1)}) — due 2026-10-22 (overdue)`);
+    expect(body).not.toContain('2026-10-23 (overdue)');
+    expect(section(body, 'Next 7 days').split('\n')).toEqual([
+      `- due 2026-10-23: [Task 2](${url(2)})`,
+      `- 2026-10-23 11:00: [Meeting: M5](${url(5)})`,
+      `- due 2026-10-25: [Task 3](${url(3)})`, // local midnight, before the 02:00 meeting that day
+      `- 2026-10-25 02:00: [Meeting: M4](${url(4)})`,
+    ]);
+  });
+
+  it('escapes backslashes and brackets in link text', async () => {
+    const { d, created } = deps({ all: [issue(1, { title: 'a\\] b [c]' })] });
+    await weeklySummary(d);
+    expect(section(created[0].body, 'Open')).toBe(`- [a\\\\\\] b \\[c\\]](${url(1)})`);
   });
 
   it('ignores an on-demand summary or one older than 24 hours for the re-run check', async () => {

@@ -5500,7 +5500,7 @@ var require_body = __commonJS({
         const boundary = `----formdata-undici-0${`${random(1e11)}`.padStart(11, "0")}`;
         const prefix = `--${boundary}\r
 Content-Disposition: form-data`;
-        const escape2 = (str2) => str2.replace(/\n/g, "%0A").replace(/\r/g, "%0D").replace(/"/g, "%22");
+        const escape3 = (str2) => str2.replace(/\n/g, "%0A").replace(/\r/g, "%0D").replace(/"/g, "%22");
         const normalizeLinefeeds = (value) => value.replace(/\r?\n|\r/g, "\r\n");
         const blobParts = [];
         const rn = new Uint8Array([13, 10]);
@@ -5508,14 +5508,14 @@ Content-Disposition: form-data`;
         let hasUnknownSizeValue = false;
         for (const [name, value] of object) {
           if (typeof value === "string") {
-            const chunk2 = textEncoder.encode(prefix + `; name="${escape2(normalizeLinefeeds(name))}"\r
+            const chunk2 = textEncoder.encode(prefix + `; name="${escape3(normalizeLinefeeds(name))}"\r
 \r
 ${normalizeLinefeeds(value)}\r
 `);
             blobParts.push(chunk2);
             length += chunk2.byteLength;
           } else {
-            const chunk2 = textEncoder.encode(`${prefix}; name="${escape2(normalizeLinefeeds(name))}"` + (value.name ? `; filename="${escape2(value.name)}"` : "") + `\r
+            const chunk2 = textEncoder.encode(`${prefix}; name="${escape3(normalizeLinefeeds(name))}"` + (value.name ? `; filename="${escape3(value.name)}"` : "") + `\r
 Content-Type: ${value.type || "application/octet-stream"}\r
 \r
 `);
@@ -32591,6 +32591,11 @@ function localParts(at, tz) {
   const p = Object.fromEntries(f.formatToParts(at).map((x) => [x.type, x.value]));
   return { y: +p.year, m: +p.month, d: +p.day, h: +p.hour, mi: +p.minute, weekday: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].indexOf(p.weekday) };
 }
+function offsetMinutes(at, tz) {
+  const l = localParts(at, tz);
+  return (Date.UTC(l.y, l.m - 1, l.d, l.h, l.mi) - Math.floor(at.getTime() / 6e4) * 6e4) / 6e4;
+}
+var fmtOffset = (min) => `${min < 0 ? "-" : "+"}${pad(Math.floor(Math.abs(min) / 60))}:${pad(Math.abs(min) % 60)}`;
 function localDate(at, tz) {
   const l = localParts(at, tz);
   return `${l.y}-${pad(l.m)}-${pad(l.d)}`;
@@ -32601,6 +32606,14 @@ function localTime(at, tz) {
 }
 function addDays(date, n) {
   return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
+}
+function atLocal(date, time, tz) {
+  const [y, m, d] = date.split("-").map(Number);
+  const [h, mi] = time.split(":").map(Number);
+  const guess = Date.UTC(y, m - 1, d, h, mi);
+  const first = offsetMinutes(new Date(guess), tz);
+  const off = offsetMinutes(new Date(guess - first * 6e4), tz);
+  return `${date}T${time}:00${fmtOffset(off)}`;
 }
 function isDate(s) {
   return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && addDays(s, 0) === s;
@@ -33113,7 +33126,7 @@ function sections(c, p, tz) {
   const open2 = tasks.filter((i) => i.state === "open");
   const overdue = (i) => (dueOf(i) ?? today) < today;
   const byNumber = new Map(c.issues.map((i) => [i.number, i]));
-  const when = (i) => has(i, "meeting") ? i.start ?? "" : `${dueOf(i)}T00:00`;
+  const when = (i) => Date.parse(has(i, "meeting") ? i.start ?? "" : atLocal(dueOf(i) ?? today, "00:00", tz));
   return {
     done: tasks.filter((i) => i.closedAt !== null && inPeriod(i.closedAt, p)),
     open: [...open2.filter(overdue).sort((a, b) => (dueOf(a) ?? "").localeCompare(dueOf(b) ?? "")), ...open2.filter((i) => !overdue(i))],
@@ -33125,7 +33138,7 @@ function sections(c, p, tz) {
         return d !== void 0 && d >= today && d < week;
       }),
       ...c.issues.filter((i) => has(i, "meeting") && i.state === "open" && i.start !== void 0 && inPeriod(i.start, next))
-    ].sort((a, b) => when(a).localeCompare(when(b))),
+    ].sort((a, b) => when(a) - when(b)),
     today,
     tz
   };
@@ -33149,7 +33162,8 @@ function toNotes(v) {
   const o = v ?? {};
   return { done: list(o.done), meetings: list(o.meetings), tracked: list(o.tracked) };
 }
-var link = (i) => `[${sanitize(i.title).replace(/[[\]]/g, "\\$&")}](${i.url})`;
+var escape2 = (t) => t.replace(/[\\[\]]/g, "\\$&");
+var link = (i) => `[${escape2(sanitize(i.title))}](${i.url})`;
 var noteFor = (notes, i) => notes.find((n) => n.issue === i.number)?.note;
 var section = (title, lines) => `## ${title}
 
@@ -33160,7 +33174,7 @@ function trackedLine({ issue: issue2, t }, notes) {
   const facts = [
     a.state,
     a.comments.length ? `${a.comments.length} new comment${a.comments.length === 1 ? "" : "s"}` : "",
-    ...a.mergedPrs.map((pr) => `merged [${pr.title.replace(/[[\]]/g, "\\$&")}](${pr.url})`),
+    ...a.mergedPrs.map((pr) => `merged [${escape2(pr.title)}](${pr.url})`),
     noteFor(notes, issue2) ?? ""
   ].filter(Boolean);
   return `- ${link(issue2)} \u2014 ${facts.join("; ")}`;
@@ -33238,9 +33252,10 @@ var handlers = {
   summary: (env) => {
     const { owner, tz } = loadConfig(env);
     let bin;
+    let reader;
     return weeklySummary({
       gh: createGh(env),
-      reader: createReader(env),
+      reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
       owner,
       tz,
       now: () => /* @__PURE__ */ new Date(),

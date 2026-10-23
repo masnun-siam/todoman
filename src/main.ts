@@ -38,9 +38,10 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
   summary: (env) => {
     const { owner, tz } = loadConfig(env);
     let bin: string | undefined; // installed only when the summary has text to condense
+    let reader: ExternalReader | undefined; // built on first tracking issue, so a bad GH_READ_TOKENS spares a summary without any
     return weeklySummary({
       gh: createGh(env),
-      reader: createReader(env),
+      reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
       owner,
       tz,
       now: () => new Date(),
