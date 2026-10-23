@@ -4,8 +4,26 @@ on:
   push:
     branches: [main]
 jobs:
-  ci:
+  # Use the self-hosted Mac when it is online and idle, else ubuntu-latest.
+  # Listing runners needs RUNNER_STATUS_TOKEN (PAT, Administration: read); without it, ubuntu.
+  runner:
     runs-on: ubuntu-latest
+    outputs:
+      labels: ${{ steps.pick.outputs.labels }}
+    steps:
+      - id: pick
+        env:
+          GH_TOKEN: ${{ secrets.RUNNER_STATUS_TOKEN }}
+        run: |
+          labels='"ubuntu-latest"'
+          if [ -n "$GH_TOKEN" ] && gh api "repos/$GITHUB_REPOSITORY/actions/runners" \
+              --jq '.runners[] | select(.status == "online" and .busy == false) | .name' | grep -q .; then
+            labels='["self-hosted","macOS","ARM64"]'
+          fi
+          echo "labels=$labels" >> "$GITHUB_OUTPUT"
+  ci:
+    needs: runner
+    runs-on: ${{ fromJSON(needs.runner.outputs.labels) }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
