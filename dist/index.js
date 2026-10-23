@@ -32126,13 +32126,16 @@ function octokitClient(token) {
     }
   };
 }
-async function canReadOwner(token, owner) {
+async function canReadOwner(token, owner, ownersFor = repoOwners) {
   try {
-    await getOctokit(token).rest.users.getByUsername({ username: owner });
-    return true;
+    return (await ownersFor(token)).some((o) => o.toLowerCase() === owner.toLowerCase());
   } catch {
     return false;
   }
+}
+async function repoOwners(token) {
+  const octokit = getOctokit(token);
+  return octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, { per_page: 100 }, (r) => r.data.map((repo) => repo.owner.login));
 }
 
 // src/google.ts

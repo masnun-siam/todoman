@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createReader, parseReadTokens, parseRef, READ_TOKENS_ERROR, refString, type ExternalGh } from '../src/external.js';
+import { canReadOwner, createReader, parseReadTokens, parseRef, READ_TOKENS_ERROR, refString, type ExternalGh } from '../src/external.js';
 
 const REF = { owner: 'masnun-siam', repo: 'meeting-manager', number: 85 };
 const PERIOD = { from: '2026-10-15T12:00:00Z', to: '2026-10-22T12:00:00Z' };
@@ -115,5 +115,26 @@ describe('readExternalActivity', () => {
     const s = stub({ comments: async () => Promise.reject(Object.assign(new Error('x'), { status: 404 })) });
     expect(await createReader({ GH_READ_TOKENS: TOKENS }, s.clientFor).readExternalActivity(REF, PERIOD)).toEqual({ access: false });
     expect(await createReader({}, s.clientFor).readExternalActivity(REF, PERIOD)).toEqual({ access: false });
+  });
+});
+
+describe('canReadOwner', () => {
+  const owners = (list: string[]) => async () => list;
+
+  it('passes when the token can read a repo of the owner, in any case', async () => {
+    expect(await canReadOwner('t', 'acme', owners(['masnun-siam', 'ACME']))).toBe(true);
+    expect(await canReadOwner('t', 'acme', owners(['Acme']))).toBe(true);
+  });
+
+  it('fails when the token reads only other owners or nothing', async () => {
+    expect(await canReadOwner('t', 'acme', owners(['masnun-siam']))).toBe(false);
+    expect(await canReadOwner('t', 'acme', owners([]))).toBe(false);
+  });
+
+  it('fails, never throws, when listing rejects', async () => {
+    const ownersFor = async (): Promise<string[]> => {
+      throw new Error('Bad credentials');
+    };
+    expect(await canReadOwner('t', 'acme', ownersFor)).toBe(false);
   });
 });
