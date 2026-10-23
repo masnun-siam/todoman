@@ -12,7 +12,7 @@ vi.mock('../src/process.js', () => ({
   failInterruptedRun: async (_gh: unknown, n: number, log: (l: string) => void) => log(`on-failure #${n}`),
 }));
 vi.mock('../src/summary.js', () => ({ weeklySummary: async (d: { log: (l: string) => void }) => d.log('mode: summary') }));
-vi.mock('../src/doctor.js', () => ({ runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
+vi.mock('../src/doctor.js', () => ({ baseChecks: [], secretChecks: () => [], runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
 function event(login: string): string {
   const p = join(tmpdir(), `todoman-event-${login}.json`);

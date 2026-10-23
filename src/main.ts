@@ -2,10 +2,10 @@ import * as core from '@actions/core';
 import { loadConfig, type Env } from './config.js';
 import { installClaude, runClaude } from './claude.js';
 import { eventActor, eventIssue, isOwner } from './gate.js';
-import { runDoctor } from './doctor.js';
-import { createReader, type ExternalReader } from './external.js';
+import { baseChecks, runDoctor, secretChecks } from './doctor.js';
+import { canReadOwner, createReader, type ExternalReader } from './external.js';
 import { createGh } from './github.js';
-import { createCalendar } from './google.js';
+import { createCalendar, probeCalendar } from './google.js';
 import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
 import { weeklySummary } from './summary.js';
@@ -48,7 +48,15 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
       log: core.info,
     });
   },
-  doctor: (env) => runDoctor(createGh(env), core.info),
+  doctor: (env) =>
+    runDoctor(createGh(env), core.info, [
+      ...baseChecks,
+      ...secretChecks(env, {
+        claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? '', bin: installClaude(env.GITHUB_ACTION_PATH ?? '.') }),
+        probeCalendar: () => probeCalendar(env),
+        canReadOwner,
+      }),
+    ]),
 };
 
 export async function run(mode: string, env: Env = process.env): Promise<void> {
