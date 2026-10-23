@@ -1,0 +1,7 @@
+{
+  "name": "Ambiguous meeting (no date or time)",
+  "now": "2026-10-21T04:01:00Z",
+  "dump": { "title": "meeting with asif about the roadmap", "body": "sometime soon", "at": "2026-10-21T04:00:00Z" },
+  "people": [{ "name": "Asif", "aliases": ["asif"], "email": "asif@example.com" }],
+  "expect": { "items": [], "question": true }
+}

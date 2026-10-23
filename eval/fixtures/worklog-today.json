@@ -1,0 +1,6 @@
+{
+  "name": "Worklog for today",
+  "now": "2026-10-21T12:01:00Z",
+  "dump": { "title": "worklog for today", "body": "", "at": "2026-10-21T12:00:00Z" },
+  "expect": { "items": [{ "type": "summary", "from": "2026-10-21", "to": "2026-10-21" }], "question": false }
+}
