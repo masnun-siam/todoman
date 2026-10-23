@@ -1,5 +1,6 @@
 import type { Issue, ProcessGh } from './github.js';
 import type { ValidItem } from './validate.js';
+import { taskHandler } from './handlers/task.js';
 
 export interface ItemContext {
   gh: ProcessGh;
@@ -26,5 +27,5 @@ export interface ItemHandler {
   create(item: ValidItem, ctx: ItemContext): Promise<Created>;
 }
 
-/** Registered handlers; task (#10), meeting (#14) and tracking (#16) add theirs here. */
-export const HANDLERS: ItemHandler[] = [];
+/** Registered handlers; meeting (#14) and tracking (#16) add theirs here. */
+export const HANDLERS: ItemHandler[] = [taskHandler];

@@ -32183,6 +32183,9 @@ function createGh(env) {
     },
     async closeCompleted(n) {
       await api.issues.update({ owner, repo, issue_number: n, state: "closed", state_reason: "completed" });
+    },
+    async createIssue(i) {
+      return toIssue((await api.issues.create({ owner, repo, ...i })).data);
     }
   };
 }
@@ -32191,6 +32194,7 @@ function createGh(env) {
 var BOT = "github-actions[bot]";
 var REPO = "[\\w.-]+/[\\w.-]+";
 var REF = `${REPO}#\\d+`;
+var itemMarker = (m) => `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ""} -->`;
 var readMarker = (id) => `<!-- todoman:read id=${id} -->`;
 var botBodies = (items) => items.filter((i) => i.author === BOT).map((i) => i.body);
 function parseItemMarkers(items) {
@@ -32243,13 +32247,33 @@ async function setState(gh, issue2, state) {
   issue2.labels = [...issue2.labels.filter((x) => !STATE_LABELS.includes(x)), state];
 }
 
+// src/handlers/task.ts
+var taskHandler = {
+  type: "task",
+  async create(item, ctx) {
+    if (item.type !== "task") throw new Error("not a task");
+    const due = item.due ? `Due: ${item.due}` : "";
+    const body = [item.body, due, `Source dump: ${ctx.dump.url}`, itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key })].filter(Boolean).join("\n\n");
+    const issue2 = await ctx.gh.createIssue({ title: item.title, body, labels: ["task", ...item.labels], assignees: [ctx.owner] });
+    return { title: issue2.title, url: issue2.url, details: due ? [due] : [] };
+  }
+};
+
 // src/handlers.ts
-var HANDLERS = [];
+var HANDLERS = [taskHandler];
 
 // src/keys.ts
 function nextKey(markers, dump) {
   const used = markers.filter((m) => m.dump === dump).map((m) => Number(m.key.slice(1)));
   return `i${Math.max(0, ...used) + 1}`;
+}
+
+// src/match.ts
+var normTitle = (t) => t.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+function isCreated(item, created) {
+  if (item.type !== "task") return false;
+  const title = normTitle(item.title);
+  return created.some((c) => c.type === item.type && normTitle(c.title) === title);
 }
 
 // src/result.ts
@@ -32454,7 +32478,7 @@ async function processDump(p) {
   const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
   const { items, questions } = validate(output, { now, text: ownText, labels, people });
   const results = [];
-  for (const item of items) {
+  for (const item of items.filter((i) => !isCreated(i, created))) {
     const key = nextKey(markers, p.issue);
     markers.push({ repo: p.repo, dump: p.issue, key });
     const title = "title" in item ? item.title : item.type === "tracking" ? item.ref : `${item.from} \u2013 ${item.to}`;
