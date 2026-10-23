@@ -80,6 +80,15 @@ describe('insertEvent', () => {
       expect(calls.filter((c) => c.method === 'POST' && c.url.includes('/events'))).toHaveLength(1);
     }
   });
+  it('falls back to the conference video entry point for the Meet link', async () => {
+    const body = { htmlLink: 'https://calendar/e', conferenceData: { entryPoints: [{ entryPointType: 'phone', uri: 'tel:1' }, { entryPointType: 'video', uri: 'https://meet/y' }] } };
+    const { fetchFn } = stubFetch({ ...TOKEN, [INSERT]: [{ status: 200, body }] });
+    expect(await createCalendar(ENV, fetchFn).insertEvent(EVENT)).toMatchObject({ meetLink: 'https://meet/y' });
+  });
+  it('treats a reply without an event link as a failure', async () => {
+    const { fetchFn } = stubFetch({ ...TOKEN, [INSERT]: [{ status: 200, body: { hangoutLink: 'https://meet/x' } }] });
+    await expect(createCalendar(ENV, fetchFn).insertEvent(EVENT)).rejects.toMatchObject({ kind: 'failed' });
+  });
   it('raises fixed errors that never carry a Google body', async () => {
     for (const [status, kind] of [[500, 'failed'], [403, 'failed'], [401, 'auth']] as const) {
       const { fetchFn } = stubFetch({ ...TOKEN, [INSERT]: [{ status, body: SECRET_BODY }] });

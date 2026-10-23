@@ -31,6 +31,7 @@ export class GoogleError extends Error {
 
 const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+const TIMEOUT_MS = 30_000; // a hung connection fails the step instead of stalling the run
 
 /** Exchanges the refresh token (scope calendar.events) for an access token. */
 export async function refreshAccessToken(env: Env, fetchFn: typeof fetch = fetch): Promise<string> {
@@ -39,6 +40,7 @@ export async function refreshAccessToken(env: Env, fetchFn: typeof fetch = fetch
   const res = await fetchFn(TOKEN_URL, {
     method: 'POST',
     body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refresh, grant_type: 'refresh_token' }),
+    signal: AbortSignal.timeout(TIMEOUT_MS),
   }).catch(() => {
     throw new GoogleError('failed');
   });
@@ -68,7 +70,7 @@ export function createCalendar(env: Env, fetchFn: typeof fetch = fetch): Calenda
   async function call(url: string, init: RequestInit = {}): Promise<Response> {
     token ??= refreshAccessToken(env, fetchFn);
     const headers = { authorization: `Bearer ${await token}`, 'content-type': 'application/json' };
-    const res = await fetchFn(url, { ...init, headers }).catch(() => {
+    const res = await fetchFn(url, { ...init, headers, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => {
       throw new GoogleError('failed');
     });
     if (res.status === 401) throw new GoogleError('auth');
@@ -95,7 +97,10 @@ export function createCalendar(env: Env, fetchFn: typeof fetch = fetch): Calenda
         conferenceData: { createRequest: { requestId: e.id, conferenceSolutionKey: { type: 'hangoutsMeet' } } },
       };
       const res = await call(`${EVENTS_URL}?conferenceDataVersion=1&sendUpdates=all`, { method: 'POST', body: JSON.stringify(body) });
-      if (res.status === 409) return getEvent(e.id); // id already exists: a retry, or Siam deleted it in Calendar
+      if (res.status === 409) {
+        await res.body?.cancel();
+        return getEvent(e.id);
+      } // id already exists: a retry, or Siam deleted it in Calendar
       if (!res.ok) throw new GoogleError('failed');
       return result('created', await json(res));
     },
