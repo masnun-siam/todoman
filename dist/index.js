@@ -32127,6 +32127,7 @@ var toIssue = (i) => ({
   labels: i.labels.map((l) => typeof l === "string" ? l : l.name ?? ""),
   createdAt: i.created_at
 });
+var toDated = (i) => ({ ...toIssue(i), updatedAt: i.updated_at, closedAt: i.closed_at });
 var status = (e) => e.status;
 function createGh(env) {
   const [owner, repo] = (env.GITHUB_REPOSITORY ?? "").split("/");
@@ -32167,6 +32168,14 @@ function createGh(env) {
     async issuesSince(since) {
       const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: "all", since, per_page: 100 });
       return rows.filter((i) => !i.pull_request && i.created_at >= since).map(toIssue);
+    },
+    async issuesUpdatedSince(since) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: "all", since, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toDated);
+    },
+    async issuesLabelled(label, state) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state, labels: label, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toDated);
     },
     async addLabel(n, label) {
       await api.issues.addLabels({ owner, repo, issue_number: n, labels: [label] });
