@@ -101,7 +101,7 @@ Fix every `FAIL` it prints (see [Doctor](#doctor)) and run it again until all pa
 
 ## Release
 
-Merges to `main` reach no data repo until `v1` moves. With `main` green and `dist/` built:
+Merges to `main` reach no data repo until `v1` moves. With `main` green, `dist/` built, and the parser evals and sandbox checks in [`docs/e2e.md`](docs/e2e.md) passed:
 
 1. Move the tag: `git fetch origin && git tag -f v1 origin/main && git push -f origin v1`.
 2. If `templates/` changed, copy the new workflow files into both data repos (setup step 2).
