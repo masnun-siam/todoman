@@ -29,6 +29,12 @@ export function localDate(at: Date, tz: string): string {
   return `${l.y}-${pad(l.m)}-${pad(l.d)}`;
 }
 
+/** 'HH:mm' of an instant in `tz`. */
+export function localTime(at: Date, tz: string): string {
+  const l = localParts(at, tz);
+  return `${pad(l.h)}:${pad(l.mi)}`;
+}
+
 export function addDays(date: string, n: number): string {
   return new Date(Date.parse(`${date}T00:00:00Z`) + n * DAY).toISOString().slice(0, 10);
 }

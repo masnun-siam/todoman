@@ -20,6 +20,8 @@ export interface CreatedItem {
   type: string;
   title: string;
   url: string;
+  /** Meeting start (UTC ISO) from the item marker. */
+  start?: string;
 }
 
 /** The live dump: issue, whole thread and how long it has been processing. */
@@ -53,7 +55,7 @@ export async function createdItems(gh: ProcessGh, repo: string, d: Dump): Promis
   const items: CreatedItem[] = [];
   for (const i of await gh.issuesSince(d.issue.createdAt)) {
     for (const m of parseItemMarkers([{ author: i.author, body: i.body }]).filter(mine)) {
-      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? 'item', title: i.title, url: i.url });
+      items.push({ key: m.key, type: i.labels.find((l) => TYPE_LABELS.includes(l)) ?? 'item', title: i.title, url: i.url, ...(m.start ? { start: m.start } : {}) });
     }
   }
   const fromComments = parseItemMarkers(d.comments).filter(mine);

@@ -16,7 +16,8 @@ export function endState(results: ItemResult[], questions: Question[]): EndState
 function line(r: ItemResult): string {
   if (!r.ok) return `- ${r.type}: ${r.title} — not created: ${r.reason}`;
   const details = r.created.details.length ? ` — ${r.created.details.join('; ')}` : '';
-  return `- ${r.type}: [${r.created.title}](${r.created.url})${details}`;
+  const title = r.created.url ? `[${r.created.title}](${r.created.url})` : r.created.title;
+  return `- ${r.type}: ${title}${details}`;
 }
 
 /** The one result comment of a run; `read` is the newest comment id this run read. */

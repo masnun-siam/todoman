@@ -5,9 +5,11 @@ import { RETRY } from '../src/failure.js';
 import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
 import { GoogleError } from '../src/google.js';
 import type { ItemHandler } from '../src/handlers.js';
+import { meetingHandler } from '../src/handlers/meeting.js';
 import { taskHandler } from '../src/handlers/task.js';
+import type { Calendar } from '../src/google.js';
 import { BOT, itemMarker, readMarker } from '../src/markers.js';
-import { failInterruptedRun, processDump } from '../src/process.js';
+import { failInterruptedRun, processDump, type ProcessDeps } from '../src/process.js';
 import { endState } from '../src/result.js';
 
 const OWNER = 'masnun-siam';
@@ -49,10 +51,10 @@ function fakeGh(issue: Issue, comments: IssueComment[] = [], extra: { since?: Da
 const task: ItemHandler = { type: 'task', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/9', details: ['Due: 2026-10-22'] }) };
 const broken: ItemHandler = { type: 'task', create: async () => { throw new Error('ghp_SECRET boom'); } };
 
-async function run(gh: ProcessGh, output: unknown, handlers = [task]) {
+async function run(gh: ProcessGh, output: unknown, handlers = [task], calendar = {} as ProcessDeps['calendar']) {
   const inputs: string[] = [];
   const logs: string[] = [];
-  await processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
+  await processDump({ gh, calendar, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers, log: (l) => logs.push(l), claude: async (r) => (inputs.push(r.input), output) });
   return { inputs, logs };
 }
 const milk = { items: [{ type: 'task', title: 'Buy milk', due: '2026-10-22' }], questions: [] };
@@ -221,7 +223,7 @@ describe('failures (FR-9)', () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     if ('gh' in fail) gh.labelNames = async () => { throw fail.gh; };
     const claude = async () => { if ('claude' in fail) throw fail.claude; return milk; };
-    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
+    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude })).rejects.toBeDefined();
     const [c, ...rest] = comments(writes);
     expect(rest).toEqual([]);
     expect(c).toContain(`Todoman failed while ${want}`);
@@ -232,7 +234,7 @@ describe('failures (FR-9)', () => {
   it('a failure comment that cannot be posted still leaves the dump failed, not processing', async () => {
     const { gh, writes } = fakeGh(dumpIssue(), [comment(8, OWNER)]);
     gh.comment = async () => { throw new Error('down'); };
-    await expect(processDump({ gh, repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
+    await expect(processDump({ gh, calendar: {} as ProcessDeps['calendar'], repo: REPO, issue: 5, owner: OWNER, tz: 'Asia/Dhaka', now: () => NOW, handlers: [task], log: () => undefined, claude: async () => { throw new ClaudeError('timeout'); } })).rejects.toBeInstanceOf(ClaudeError);
     expect(writes).toEqual(['+todoman:processing#5', '+failed#5', '-todoman:processing#5']);
   });
   it('a revoked Google token fails the item with how to renew it, keeping the items created', async () => {
@@ -342,5 +344,71 @@ describe('processDump questions (FR-7)', () => {
     expect(c).toContain('PRD review with Asif: ');
     expect(c).not.toContain('https://github.com/x/10');
     expect(writes).toContain('+needs-info#5');
+  });
+});
+
+describe('processDump meetings (FR-4, FR-4a, FR-8)', () => {
+  /** A calendar that remembers ids, as Google does: a second insert of an id reads it back. */
+  function fakeCalendar() {
+    const ids = new Set<string>();
+    const inserts: string[] = [];
+    const calendar: Calendar = {
+      insertEvent: async (e) => {
+        inserts.push(e.id);
+        const status = ids.has(e.id) ? 'existing' : 'created';
+        ids.add(e.id);
+        return { status, meetLink: 'https://meet/x', eventLink: 'https://calendar/e' };
+      },
+      describeEvent: async () => {},
+    };
+    return { calendar, ids, inserts };
+  }
+  const prd = { type: 'meeting', title: 'PRD review with Asif', start: '2026-10-26T11:00:00+06:00', durationMinutes: 60, attendees: ['asif', 'bob', 'rafi'], agenda: 'PRD review' };
+  const title = 'have a meeting with asif and rafi about prd review on monday 11 am for 1 hour';
+  const people = '- name: Asif\n  aliases: [asif]\n  email: asif@example.com\n- name: Bob\n  aliases: []\n  email: bob@example.com\n';
+
+  it('creates the event and meeting issue, and the result comment lists when and who', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ title }));
+    gh.fileText = async () => people;
+    const cal = fakeCalendar();
+    await run(gh, { items: [prd], questions: [] }, [meetingHandler], cal.calendar);
+    expect(cal.inserts).toHaveLength(1);
+    expect(writes).toContain('create:Meeting: PRD review with Asif');
+    const [c] = comments(writes);
+    expect(c).toContain('- meeting: [Meeting: PRD review with Asif](https://github.com/x/100) — Mon 2026-10-26 11:00–12:00 Asia/Dhaka; 60 minutes; invited: Asif');
+    expect(c).toContain('bob — not named in the dump, skipped');
+    expect(c).toContain('rafi — not in people.yml, invite manually');
+    expect(writes).toContain('close#5');
+  });
+
+  it('a retry after the event was made but the issue failed makes one issue and no second event', async () => {
+    const issues: Issue[] = [];
+    const cal = fakeCalendar();
+    const first = fakeGh(dumpIssue({ title }), [], { issues });
+    first.gh.createIssue = async () => {
+      throw new Error('github down');
+    };
+    await run(first.gh, { items: [prd], questions: [] }, [meetingHandler], cal.calendar);
+    expect(first.writes).toContain('+failed#5');
+
+    const retry = fakeGh(dumpIssue({ title, labels: ['failed'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'retry')], { issues });
+    await run(retry.gh, { items: [prd], questions: [] }, [meetingHandler], cal.calendar);
+    expect(cal.ids.size).toBe(1);
+    expect(issues.map((i) => i.title)).toEqual(['Meeting: PRD review with Asif']);
+    expect(retry.writes).toContain('close#5');
+
+    // a later run that gets the meeting again skips it by start time: no insert at all
+    const again = fakeGh(dumpIssue({ title, labels: ['failed'] }), [comment(10, BOT, readMarker(0)), comment(14, OWNER, 'again')], { issues });
+    await run(again.gh, { items: [{ ...prd, title: 'Renamed' }], questions: [] }, [meetingHandler], cal.calendar);
+    expect(cal.inserts).toHaveLength(2);
+    expect(issues).toHaveLength(1);
+  });
+
+  it('reports a deleted event without creating anything', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ title }));
+    const calendar: Calendar = { insertEvent: async () => ({ status: 'deleted' }), describeEvent: async () => {} };
+    await run(gh, { items: [prd], questions: [] }, [meetingHandler], calendar);
+    expect(writes.filter((w) => w.startsWith('create:'))).toEqual([]);
+    expect(comments(writes)[0]).toContain('- meeting: Meeting: PRD review with Asif — the calendar event was deleted');
   });
 });

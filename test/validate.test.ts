@@ -60,6 +60,7 @@ describe('validate', () => {
   it('accepts a 31 day summary and the boundary values', () => {
     expect(one({ type: 'summary', from: '2026-10-01', to: '2026-10-31' }).items).toHaveLength(1);
     expect(one({ ...meeting, durationMinutes: 5 }).items).toHaveLength(1);
+    expect(one({ ...meeting, durationMinutes: undefined }).items[0]).toMatchObject({ durationMinutes: 30 });
     expect(one({ ...meeting, durationMinutes: 480 }).items).toHaveLength(1);
     expect(one({ type: 'task', title: 'x'.repeat(120) }).items).toHaveLength(1);
   });

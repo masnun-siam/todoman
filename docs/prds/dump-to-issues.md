@@ -105,7 +105,7 @@ flowchart LR
 All state lives in the data repo's issues, labels and comments. No database.
 
 - **Labels (created by `doctor`, fixed colour and description each):** types `task`, `meeting`, `tracking`, `summary`; dump states `todoman:processing`, `processed`, `needs-info`, `failed`; `repo:<owner>/<repo>` created on first use for tracking issues, best effort (truncated to 50 characters). Any other labels are Siam's area labels, which Claude may pick from but never create. Every created issue is assigned to `TODOMAN_OWNER`.
-- **Item marker:** every issue or comment Todoman creates for an item carries a hidden HTML comment `<!-- todoman:item repo=<data repo> dump=<n> key=<k> -->`. Markers count only on issues and comments authored by the Actions bot. They are found through consistent list endpoints (the dump's comments, and the data repo's issues created since the dump's `created_at`), never through search.
+- **Item marker:** every issue or comment Todoman creates for an item carries a hidden HTML comment `<!-- todoman:item repo=<data repo> dump=<n> key=<k> -->`; on a meeting issue it also carries `start=<UTC start>`, the key meetings are matched by. Markers count only on issues and comments authored by the Actions bot. They are found through consistent list endpoints (the dump's comments, and the data repo's issues created since the dump's `created_at`), never through search.
 - **Item keys:** assigned by Todoman's code (`i1`, `i2`, … continuing after the highest key already in a marker for the dump), never by Claude.
 - **Item matching on reprocess:** Claude is given the items already created for the dump and returns only the remaining ones; Todoman's code additionally skips any returned item that matches an already-created one by type plus normalised title (task), start time (meeting), reference (tracking) or period (summary).
 - **Calendar event id:** derived deterministically from a hash of the data repo's full name, the dump number and the meeting's start time in UTC (base32hex, as Google requires) — values the code controls, not Claude's key — so a retry can never create a second event for the same meeting, and the sandbox and real repos never collide. Validation rejects two meetings with the same start in one dump.
@@ -268,6 +268,7 @@ None.
 
 ## Change log
 
+- 2026-10-24 — #14: the meeting issue's item marker records the start (`start=`), so meeting matching on reprocess needs no body parsing. The event is created first and its description links the meeting issue once it exists.
 - 2026-10-21 — First draft.
 - 2026-10-21 — Round 3: approved by all six lenses. Minor fixes: sequence diagram shows code-assigned keys; tracking-note marker carries `ref`; FR-8 re-run gate uses the last comment read; `workflow_dispatch` summary without dates is weekly.
 - 2026-10-21 — Round 2 panel fixes: code-assigned item keys; event id from repo, dump and start time; tracking-note dedupe; no repeated comment on a re-run; relative dates anchored to their message; contiguous weekly periods ending at run time; summaries exclude dumps and summaries; doctor's Google check is read-only; agenda URLs removed and refs must appear in the dump; CLI pinned by integrity hash; 3× evals; closed-dump hint. All decisions settled.

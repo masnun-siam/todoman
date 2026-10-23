@@ -1,9 +1,12 @@
 import type { Issue, ProcessGh } from './github.js';
+import type { Calendar } from './google.js';
 import type { ValidItem } from './validate.js';
+import { meetingHandler } from './handlers/meeting.js';
 import { taskHandler } from './handlers/task.js';
 
 export interface ItemContext {
   gh: ProcessGh;
+  calendar: Calendar;
   /** Data repo full name, `owner/repo`. */
   repo: string;
   owner: string;
@@ -16,7 +19,8 @@ export interface ItemContext {
 /** What a handler created, as the result comment lists it. */
 export interface Created {
   title: string;
-  url: string;
+  /** Absent when nothing was created, e.g. a meeting whose event Siam deleted. */
+  url?: string;
   /** Resolved details, e.g. 'Due: 2026-10-23' or who was invited. */
   details: string[];
 }
@@ -27,5 +31,5 @@ export interface ItemHandler {
   create(item: ValidItem, ctx: ItemContext): Promise<Created>;
 }
 
-/** Registered handlers; meeting (#14) and tracking (#16) add theirs here. */
-export const HANDLERS: ItemHandler[] = [taskHandler];
+/** Registered handlers; tracking (#16) adds its own here. */
+export const HANDLERS: ItemHandler[] = [taskHandler, meetingHandler];
