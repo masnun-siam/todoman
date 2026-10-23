@@ -132,7 +132,7 @@ describe('meetingHandler (FR-4)', () => {
     const retry = ctx({ failIssue: true, event: { ...LIVE, status: 'existing' } as EventResult });
     const err = await meetingHandler.create(MEETING, retry.c).catch((e: unknown) => e);
     expect(err).toBeInstanceOf(ItemError);
-    expect((err as ItemError).note).toBe('the calendar event exists and invites were sent');
+    expect((err as ItemError).note).toBe('The calendar event exists and invites were sent.');
     expect((err as ItemError).cause).toBeInstanceOf(Error);
   });
 

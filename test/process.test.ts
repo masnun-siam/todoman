@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { ClaudeError } from '../src/claude.js';
 import { shouldProcess, type Dump } from '../src/dump.js';
 import type { ExternalReader } from '../src/external.js';
-import { RETRY } from '../src/failure.js';
+import { ItemError, RETRY } from '../src/failure.js';
 import type { Issue, IssueComment, ProcessGh } from '../src/github.js';
 import { GoogleError } from '../src/google.js';
 import type { ItemHandler } from '../src/handlers.js';
@@ -55,7 +55,7 @@ function fakeGh(issue: Issue, comments: IssueComment[] = [], extra: { since?: Da
 }
 
 const task: ItemHandler = { type: 'task', create: async (i) => ({ title: 'title' in i ? i.title : '', url: 'https://github.com/x/9', details: ['Due: 2026-10-22'], labels: ['task'] }) };
-const broken: ItemHandler = { type: 'task', create: async () => { throw new Error('ghp_SECRET boom'); } };
+const broken: ItemHandler = { type: 'task', create: async () => { throw new Error('ghp_SECRET boom.'); } };
 
 async function run(gh: ProcessGh, output: unknown, handlers = [task], calendar = {} as ProcessDeps['calendar']) {
   const inputs: string[] = [];
@@ -250,6 +250,14 @@ describe('processDump tracking (FR-2, FR-5)', () => {
 
 describe('failures (FR-9)', () => {
   const SECRET = 'ghp_SECRET123';
+  it('a failed item keeps its fixed message and adds the handler note, never the error text', async () => {
+    const noted: ItemHandler = { type: 'task', create: async () => { throw new ItemError(new Error(SECRET), 'The calendar event exists and invites were sent.'); } };
+    const { gh, writes } = fakeGh(dumpIssue());
+    await run(gh, milk, [noted]);
+    const [c] = comments(writes);
+    expect(c).toContain('| task | Buy milk | — | not created: failed while creating items: an unexpected error occurred. If it keeps failing, check the workflow run log. The calendar event exists and invites were sent. |');
+    expect(writes.join()).not.toContain(SECRET);
+  });
   it.each([
     ['Claude times out', { claude: new ClaudeError('timeout') }, 'parsing it with Claude: Claude timed out.'],
     ['Claude returns invalid output twice', { claude: new ClaudeError('invalid') }, 'parsing it with Claude: Claude returned invalid output twice.'],

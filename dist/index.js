@@ -32664,7 +32664,7 @@ ${utc}`).digest());
 }
 
 // src/handlers/meeting.ts
-var EVENT_EXISTS = "the calendar event exists and invites were sent";
+var EVENT_EXISTS = "The calendar event exists and invites were sent.";
 var SUMMARY_PROMPT = "Add the meeting summary as a comment";
 var meetingHandler = {
   type: "meeting",
@@ -33078,11 +33078,11 @@ function endState(results, questions) {
   if (results.some((r) => !r.ok)) return "failed";
   return questions.length ? "needs-info" : "processed";
 }
-var cell = (s) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/[|[\]]/g, (c) => `\\${c}`);
+var cell = (s) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/[\\|[\]]/g, (c) => `\\${c}`);
 var codes = (labels) => labels.map((l) => l.includes("`") ? cell(l) : `\`${l.replace(/\|/g, "\\|")}\``).join(" ") || "\u2014";
 function row(r) {
   if (!r.ok) {
-    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join("; ");
+    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join(" ");
     return `| ${cell(r.type)} | ${cell(r.title)} | \u2014 | ${cell(details)} |`;
   }
   const c = r.created;

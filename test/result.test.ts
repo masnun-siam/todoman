@@ -22,6 +22,10 @@ describe('resultComment table (FR-2)', () => {
     expect(c).toContain('[a \\| b \\[x\\]](https://github.com/o/r/1)');
   });
 
+  it('escapes a trailing backslash so the link stays intact', () => {
+    expect(resultComment([made('dir\\', [])], [], 'processed', 0)).toContain('[dir\\\\](https://github.com/o/r/1)');
+  });
+
   it('makes every cell a single line and shows a backtick label without a code span', () => {
     const c = resultComment([made('two\nlines', ['we`ird', 'p|q'], ['x\r\ny'])], [], 'processed', 0);
     expect(c).toContain('| task | [two lines](https://github.com/o/r/1) | we`ird `p\\|q` | x y |');
@@ -33,9 +37,9 @@ describe('resultComment table (FR-2)', () => {
   });
 
   it('shows a failed item as plain title with the step, and the event note', () => {
-    const r: ItemResult = { type: 'meeting', ok: false, title: 'Sync', reason: 'failed while creating items: boom', note: 'the calendar event exists and invites were sent' };
+    const r: ItemResult = { type: 'meeting', ok: false, title: 'Sync', reason: 'failed while creating items: boom.', note: 'The calendar event exists and invites were sent.' };
     expect(resultComment([r], [], 'failed', 0)).toContain(
-      '| meeting | Sync | — | not created: failed while creating items: boom; the calendar event exists and invites were sent |',
+      '| meeting | Sync | — | not created: failed while creating items: boom. The calendar event exists and invites were sent. |',
     );
   });
 

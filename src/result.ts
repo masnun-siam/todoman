@@ -13,13 +13,13 @@ export function endState(results: ItemResult[], questions: Question[]): EndState
   return questions.length ? 'needs-info' : 'processed';
 }
 
-/** One single-line table cell: line breaks become spaces; `|`, `[` and `]` are escaped. */
-const cell = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, ' ').replace(/[|[\]]/g, (c) => `\\${c}`);
+/** One single-line table cell: line breaks become spaces; `|`, `[` and `]` are escaped, and `\` so a trailing one cannot eat them. */
+const cell = (s: string): string => s.replace(/\s*[\r\n]+\s*/g, ' ').replace(/[\\|[\]]/g, (c) => `\\${c}`);
 const codes = (labels: string[]): string => labels.map((l) => (l.includes('`') ? cell(l) : `\`${l.replace(/\|/g, "\\|")}\``)).join(' ') || '—';
 
 function row(r: ItemResult): string {
   if (!r.ok) {
-    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join('; ');
+    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join(' ');
     return `| ${cell(r.type)} | ${cell(r.title)} | — | ${cell(details)} |`;
   }
   const c = r.created;
