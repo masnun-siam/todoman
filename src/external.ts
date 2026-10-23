@@ -72,7 +72,8 @@ export function parseReadTokens(raw: string | undefined): Map<string, string> {
 const stateOf = (i: { state: string; mergedAt: string | null }): ExternalState =>
   i.mergedAt ? 'merged' : i.state === 'open' ? 'open' : 'closed';
 
-const inPeriod = (iso: string, p: Period): boolean => {
+/** Whether `iso` falls in `p` (from inclusive, to exclusive). */
+export const inPeriod = (iso: string, p: Period): boolean => {
   const t = Date.parse(iso);
   return t >= Date.parse(p.from) && t < Date.parse(p.to);
 };

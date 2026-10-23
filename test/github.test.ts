@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 const calls: Record<string, unknown[]> = {};
 const rec = (name: string, impl: (a: unknown) => unknown = () => ({ data: {} })) =>
   vi.fn(async (a: unknown) => ((calls[name] ??= []).push(a), impl(a)));
-const issue = (number: number, created_at: string, extra = {}) => ({ number, created_at, title: 't', html_url: 'u', user: { login: 'x' }, state: 'open', labels: ['task', { name: 'area' }], ...extra });
+const issue = (number: number, created_at: string, extra = {}) => ({ number, created_at, title: 't', html_url: 'u', user: { login: 'x' }, state: 'open', labels: ['task', { name: 'area' }], updated_at: '2026-10-20T01:00:00Z', closed_at: null, ...extra });
 const rest = {
   issues: {
     listForRepo: vi.fn(),
@@ -17,7 +17,8 @@ const lists: Map<unknown, unknown[]> = new Map([
   [rest.issues.listForRepo, [issue(1, '2026-10-20T00:00:00Z'), issue(2, '2026-10-21T05:00:00Z'), issue(3, '2026-10-22T00:00:00Z', { pull_request: {} })]],
   [rest.issues.listEvents, [{ event: 'labeled', label: { name: 'todoman:processing' }, created_at: '2026-10-21T01:00:00Z' }, { event: 'labeled', label: { name: 'todoman:processing' }, created_at: '2026-10-21T02:00:00Z' }, { event: 'labeled', label: { name: 'failed' }, created_at: '2026-10-21T03:00:00Z' }]],
 ]);
-vi.mock('@actions/github', () => ({ getOctokit: () => ({ rest, paginate: async (fn: unknown) => lists.get(fn) ?? [] }) }));
+const paginated: unknown[] = [];
+vi.mock('@actions/github', () => ({ getOctokit: () => ({ rest, paginate: async (fn: unknown, a: unknown) => (paginated.push(a), lists.get(fn) ?? []) }) }));
 
 const { createGh } = await import('../src/github.js');
 const gh = createGh({ GITHUB_REPOSITORY: 'o/r', GITHUB_TOKEN: 't' });
@@ -27,6 +28,19 @@ describe('createGh (process methods)', () => {
     const got = await gh.issuesSince('2026-10-21T05:00:00Z');
     expect(got.map((i) => i.number)).toEqual([2]);
     expect(got[0].labels).toEqual(['task', 'area']);
+  });
+  it('issuesLabelled asks for the label and state, never returns PRs, and carries update and close times', async () => {
+    paginated.length = 0;
+    const got = await gh.issuesLabelled('task', 'open');
+    expect(paginated).toEqual([{ owner: 'o', repo: 'r', state: 'open', labels: 'task', per_page: 100 }]);
+    expect(got.map((i) => i.number)).toEqual([1, 2]);
+    expect(got[0]).toMatchObject({ updatedAt: '2026-10-20T01:00:00Z', closedAt: null });
+  });
+  it('issuesUpdatedSince lists every state since the time, never PRs', async () => {
+    paginated.length = 0;
+    const got = await gh.issuesUpdatedSince('2026-10-15T12:00:00Z');
+    expect(paginated).toEqual([{ owner: 'o', repo: 'r', state: 'all', since: '2026-10-15T12:00:00Z', per_page: 100 }]);
+    expect(got.map((i) => i.number)).toEqual([1, 2]);
   });
   it('labeledAt is the last time that label was added', async () => {
     expect(await gh.labeledAt(5, 'todoman:processing')).toEqual(new Date('2026-10-21T02:00:00Z'));

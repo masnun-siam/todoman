@@ -45,6 +45,20 @@ export interface ProcessGh extends Pick<Gh, 'labelNames' | 'fileText' | 'createL
   createIssue(i: { title: string; body: string; labels: string[]; assignees: string[] }): Promise<Issue>;
 }
 
+/** An issue as a summary reads it: with its update and close times. */
+export interface DatedIssue extends Issue {
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+/** The slice of GitHub that summary collection needs; tests pass a stub. */
+export interface SummaryGh extends Pick<ProcessGh, 'listComments'> {
+  /** Issues (not PRs) in any state updated at or after `since` (ISO). */
+  issuesUpdatedSince(since: string): Promise<DatedIssue[]>;
+  /** Issues (not PRs) carrying `label`. */
+  issuesLabelled(label: string, state: 'open' | 'all'): Promise<DatedIssue[]>;
+}
+
 type RawIssue = {
   number: number;
   title: string;
@@ -54,6 +68,9 @@ type RawIssue = {
   state: string;
   labels: (string | { name?: string })[];
   created_at: string;
+  updated_at: string;
+  closed_at: string | null;
+  pull_request?: unknown;
 };
 const toIssue = (i: RawIssue): Issue => ({
   number: i.number,
@@ -65,9 +82,10 @@ const toIssue = (i: RawIssue): Issue => ({
   labels: i.labels.map((l) => (typeof l === 'string' ? l : (l.name ?? ''))),
   createdAt: i.created_at,
 });
+const toDated = (i: RawIssue): DatedIssue => ({ ...toIssue(i), updatedAt: i.updated_at, closedAt: i.closed_at });
 const status = (e: unknown): number | undefined => (e as { status?: number }).status;
 
-export function createGh(env: Env): Gh & ProcessGh {
+export function createGh(env: Env): Gh & ProcessGh & SummaryGh {
   const [owner, repo] = (env.GITHUB_REPOSITORY ?? '').split('/');
   const octokit = github.getOctokit(env.GITHUB_TOKEN ?? '');
   const api = octokit.rest;
@@ -107,6 +125,14 @@ export function createGh(env: Env): Gh & ProcessGh {
       // `since` filters on updated_at, a superset of created-since; list endpoint, never search (PRD Data)
       const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: 'all', since, per_page: 100 });
       return rows.filter((i) => !i.pull_request && i.created_at >= since).map(toIssue);
+    },
+    async issuesUpdatedSince(since) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: 'all', since, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toDated);
+    },
+    async issuesLabelled(label, state) {
+      const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state, labels: label, per_page: 100 });
+      return rows.filter((i) => !i.pull_request).map(toDated);
     },
     async openIssues(label) {
       const rows = await octokit.paginate(api.issues.listForRepo, { owner, repo, state: 'open', labels: label, per_page: 100 });
