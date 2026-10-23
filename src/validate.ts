@@ -62,7 +62,7 @@ function meeting(raw: Raw, ctx: ValidateContext, seen: Set<number>): ValidItem |
   if (at.getTime() > ctx.now.getTime() + YEAR) return 'That meeting is more than a year away; when should it be?';
   const d = raw.durationMinutes ?? 30; // FR-4: missing duration defaults to 30 minutes
   if (typeof d !== 'number' || !Number.isInteger(d) || d < 5 || d > 480) return 'How long is the meeting (5 to 480 minutes)?';
-  const attendees = names(raw.attendees);
+  const attendees = names(raw.attendees)?.map((a) => text(a).replace(/\s+/g, ' ')).filter(Boolean);
   if (!attendees) return 'Who should be invited (names only)?';
   const agenda = text(raw.agenda).replace(/(https?:\/\/|www\.)\S+/gi, '').replace(/\s+/g, ' ').trim();
   if (agenda.length > 500) return 'The agenda is over 500 characters; please shorten it.';

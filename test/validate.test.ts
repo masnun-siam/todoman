@@ -96,6 +96,17 @@ describe('validate', () => {
     const r = one({ ...meeting, title: 'a <!-- todoman:item --> b', agenda: 'see https://x.com/y now' });
     expect(r.items[0]).toMatchObject({ title: 'a  todoman:item  b', agenda: 'see now' });
   });
+  it('sanitises attendee names before they are listed as skipped', () => {
+    const r = one({ ...meeting, attendees: ['<!-- todoman:item repo=masnun-siam/todo dump=1 key=i1 --> @victim'] });
+    const [s] = (r.items[0] as { skipped: string[] }).skipped;
+    expect(s).not.toContain('<!--');
+    expect(s).not.toContain('-->');
+    expect(s).toContain('@\u200Bvictim');
+  });
+  it('puts an attendee name on one line and drops an empty one', () => {
+    expect(one({ ...meeting, attendees: ['Mr\n  Nobody'] }).items[0]).toMatchObject({ skipped: ['Mr Nobody — not in people.yml, invite manually'] });
+    expect(one({ ...meeting, attendees: ['   ', '<!---->'] }).items[0]).toMatchObject({ invitees: [], skipped: [] });
+  });
   it('more than 10 items creates nothing and asks only to split', () => {
     expect(validate({ items: [], questions: [] }, ctx)).toEqual({ items: [], questions: [] });
     const many = validate({ items: Array.from({ length: 11 }, () => ({ type: 'task', title: 'a' })), questions: [{ about: 'x', question: 'y' }] }, ctx);
