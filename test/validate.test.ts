@@ -5,6 +5,7 @@ import { validate, type ValidateContext } from '../src/validate.js';
 const asif = { name: 'Asif', aliases: [], email: 'asif@example.com' };
 const ctx: ValidateContext = {
   now: new Date('2026-10-21T10:00:00+06:00'),
+  tz: 'Asia/Dhaka',
   text: 'PRD review with Asif monday 11am, tax form by friday, see masnun-siam/meeting-manager#85',
   labels: ['finance', 'task', 'todoman:processing', 'repo:a/b'],
   people: [asif],
@@ -51,6 +52,7 @@ describe('validate', () => {
     ['malformed ref', { type: 'tracking', ref: 'https://github.com/a/b/issues/1', note: 'n' }],
     ['summary over 31 days', { type: 'summary', from: '2026-10-01', to: '2026-11-01' }],
     ['summary backwards', { type: 'summary', from: '2026-10-02', to: '2026-10-01' }],
+    ['summary starting tomorrow', { type: 'summary', from: '2026-10-22', to: '2026-10-23' }],
     ['unknown type', { type: 'event', title: 'a' }],
   ])('asks about: %s', (_n, item) => {
     const r = one(item);
@@ -59,10 +61,16 @@ describe('validate', () => {
   });
   it('accepts a 31 day summary and the boundary values', () => {
     expect(one({ type: 'summary', from: '2026-10-01', to: '2026-10-31' }).items).toHaveLength(1);
+    expect(one({ type: 'summary', from: '2026-10-21', to: '2026-10-21' }).items).toHaveLength(1);
+    expect(one({ type: 'summary', from: '2026-10-20', to: '2026-10-25' }).items).toHaveLength(1);
     expect(one({ ...meeting, durationMinutes: 5 }).items).toHaveLength(1);
     expect(one({ ...meeting, durationMinutes: undefined }).items[0]).toMatchObject({ durationMinutes: 30 });
     expect(one({ ...meeting, durationMinutes: 480 }).items).toHaveLength(1);
     expect(one({ type: 'task', title: 'x'.repeat(120) }).items).toHaveLength(1);
+  });
+  it('asks which period when the summary has not started yet in TODOMAN_TZ', () => {
+    const c = { ...ctx, now: new Date('2026-10-23T10:00:00Z') };
+    expect(one({ type: 'summary', from: '2026-10-26', to: '2026-10-30' }, c).questions[0].question).toBe('That period has not started yet; which period should the summary cover?');
   });
   it('accepts a GitHub URL as the literal source of a ref', () => {
     const c = { ...ctx, text: 'check https://github.com/a/b/pull/7' };

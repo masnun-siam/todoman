@@ -4,6 +4,7 @@ import { installClaude, runClaude } from './claude.js';
 import { eventActor, eventDates, eventIssue, isOwner } from './gate.js';
 import { baseChecks, runDoctor, secretChecks } from './doctor.js';
 import { canReadOwner, createReader, type ExternalReader } from './external.js';
+import { localDate } from './dates.js';
 import { createGh } from './github.js';
 import { createCalendar, probeCalendar } from './google.js';
 import { failInterruptedRun, processDump } from './process.js';
@@ -56,7 +57,7 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
   summary: async (env) => {
     const { from, to } = eventDates(env);
     if (!from && !to) return weeklySummary(summaryDeps(env)); // schedule, or a dispatch without dates (FR-10)
-    const problem = periodProblem(from, to);
+    const problem = periodProblem(from, to, localDate(new Date(), loadConfig(env).tz));
     if (problem) throw new Error(`summary: ${problem} Give from and to as YYYY-MM-DD.`);
     const { issue, reused } = await onDemandSummary(summaryDeps(env), from, to);
     core.info(`${reused ? 'Existing summary' : 'Summary'}: ${issue.url}`);

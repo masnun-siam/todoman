@@ -1,4 +1,4 @@
-import { daysBetween, isDate, parseWithOffset } from './dates.js';
+import { daysBetween, isDate, localDate, parseWithOffset } from './dates.js';
 import { resolveInvitees, type Person } from './invitees.js';
 import { LABELS } from './labels.js';
 import { MAX_ITEMS, TOO_MANY } from './questions.js';
@@ -19,6 +19,8 @@ export interface Validated {
 }
 export interface ValidateContext {
   now: Date;
+  /** TODOMAN_TZ: where "today" is for a summary period. */
+  tz: string;
   /** The dump plus Siam's comments on it: where names and refs must literally appear. */
   text: string;
   /** Labels that exist on the data repo. */
@@ -85,16 +87,17 @@ function tracking(raw: Raw, ctx: ValidateContext): ValidItem | string {
   return { type: 'tracking', ref, note };
 }
 
-/** What is wrong with a summary period of whole days (FR-11 limit: 31 days), or null when it is fine. */
-export function periodProblem(from: unknown, to: unknown): string | null {
+/** What is wrong with a summary period of whole days (FR-11 limit: 31 days, starting no later than `today`), or null when it is fine. */
+export function periodProblem(from: unknown, to: unknown, today: string): string | null {
   if (!isDate(from) || !isDate(to) || from > to) return 'Which period should the summary cover (dates)?';
+  if (from > today) return 'That period has not started yet; which period should the summary cover?';
   if (daysBetween(from, to) + 1 > 31) return 'A summary covers at most 31 days; which period?';
   return null;
 }
 
-function summary(raw: Raw): ValidItem | string {
+function summary(raw: Raw, ctx: ValidateContext): ValidItem | string {
   const { from, to } = raw;
-  return periodProblem(from, to) ?? { type: 'summary', from: from as string, to: to as string };
+  return periodProblem(from, to, localDate(ctx.now, ctx.tz)) ?? { type: 'summary', from: from as string, to: to as string };
 }
 
 /** Validates the parser output (FR-7): a failing item becomes a question, never an error. */
@@ -115,7 +118,7 @@ export function validate(output: unknown, ctx: ValidateContext): Validated {
       : type === 'task' ? task(r, ctx)
       : type === 'meeting' ? meeting(r, ctx, seen)
       : type === 'tracking' ? tracking(r, ctx)
-      : type === 'summary' ? summary(r)
+      : type === 'summary' ? summary(r, ctx)
       : 'What kind of item is this: a task, meeting, tracking note or summary?';
     if (typeof res === 'string') questions.push({ about: about || `item ${i + 1}`, question: res });
     else items.push(res);
