@@ -5,6 +5,7 @@ export interface ItemMarker {
   dump: number;
   key: string;
   ref?: string; // owner/repo#n, set on tracking notes
+  start?: string; // UTC ISO start, set on meeting issues for FR-8 matching
 }
 export interface SummaryMarker {
   kind: 'weekly' | 'on-demand';
@@ -22,7 +23,7 @@ const REF = `${REPO}#\\d+`;
 const TS = '[\\w:.+-]+';
 
 export const itemMarker = (m: ItemMarker): string =>
-  `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ''} -->`;
+  `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ''}${m.start ? ` start=${m.start}` : ''} -->`;
 export const refMarker = (ref: string): string => `<!-- todoman:ref ${ref} -->`;
 export const summaryMarker = (m: SummaryMarker): string =>
   `<!-- todoman:summary kind=${m.kind} from=${m.from} to=${m.to} -->`;
@@ -34,9 +35,9 @@ export const readMarker = (id: number): string => `<!-- todoman:read id=${id} --
 const botBodies = (items: Authored[]): string[] => items.filter((i) => i.author === BOT).map((i) => i.body);
 
 export function parseItemMarkers(items: Authored[]): ItemMarker[] {
-  const re = new RegExp(`<!-- todoman:item repo=(${REPO}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))? -->`, 'g');
+  const re = new RegExp(`<!-- todoman:item repo=(${REPO}) dump=(\\d+) key=(i\\d+)(?: ref=(${REF}))?(?: start=(${TS}))? -->`, 'g');
   return botBodies(items).flatMap((b) =>
-    [...b.matchAll(re)].map(([, repo, dump, key, ref]) => ({ repo, dump: Number(dump), key, ...(ref ? { ref } : {}) })),
+    [...b.matchAll(re)].map(([, repo, dump, key, ref, start]) => ({ repo, dump: Number(dump), key, ...(ref ? { ref } : {}), ...(start ? { start } : {}) })),
   );
 }
 

@@ -22,6 +22,8 @@ describe('markers', () => {
     const ref = 'masnun-siam/todoman#12';
     const sum = { kind: 'weekly' as const, from: '2026-10-12T00:00:00Z', to: '2026-10-19T00:00:00Z' };
     expect(parseItemMarkers([bot(itemMarker(item)), bot(itemMarker({ ...item, key: 'i3', ref }))])).toEqual([item, { ...item, key: 'i3', ref }]);
+    const start = '2026-10-26T05:00:00.000Z';
+    expect(parseItemMarkers([bot(itemMarker({ ...item, start }))])).toEqual([{ ...item, start }]);
     expect(parseRefMarkers([bot(refMarker(ref))])).toEqual([ref]);
     expect(parseSummaryMarkers([bot(summaryMarker(sum))])).toEqual([sum]);
     expect(itemMarker(item)).toBe('<!-- todoman:item repo=masnun-siam/todo dump=7 key=i2 -->');

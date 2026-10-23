@@ -58,7 +58,7 @@ function meeting(raw: Raw, ctx: ValidateContext, seen: Set<number>): ValidItem |
   if (!at) return 'When is the meeting (date, time and timezone)?';
   if (at.getTime() <= ctx.now.getTime()) return 'That meeting time is in the past; when should it be?';
   if (at.getTime() > ctx.now.getTime() + YEAR) return 'That meeting is more than a year away; when should it be?';
-  const d = raw.durationMinutes;
+  const d = raw.durationMinutes ?? 30; // FR-4: missing duration defaults to 30 minutes
   if (typeof d !== 'number' || !Number.isInteger(d) || d < 5 || d > 480) return 'How long is the meeting (5 to 480 minutes)?';
   const attendees = names(raw.attendees);
   if (!attendees) return 'Who should be invited (names only)?';

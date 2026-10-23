@@ -4,6 +4,7 @@ import { installClaude, runClaude } from './claude.js';
 import { eventActor, eventIssue, isOwner } from './gate.js';
 import { runDoctor } from './doctor.js';
 import { createGh } from './github.js';
+import { createCalendar } from './google.js';
 import { processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
 
@@ -18,6 +19,7 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
     let bin: string | undefined; // installed only once the gate lets a run reach Claude
     return processDump({
       gh: createGh(env),
+      calendar: createCalendar(env),
       repo: env.GITHUB_REPOSITORY ?? '',
       issue,
       owner,

@@ -105,3 +105,17 @@ describe('insertEvent', () => {
     await expect(createCalendar(ENV, fetchFn).insertEvent(EVENT)).rejects.toMatchObject({ kind: 'failed', message: 'Google Calendar request failed' });
   });
 });
+
+describe('describeEvent', () => {
+  const PATCH = 'PATCH /calendar/v3/calendars/primary/events/abc123';
+  it('patches only the description and sends no update to invitees', async () => {
+    const { fetchFn, calls } = stubFetch({ ...TOKEN, [PATCH]: [{ status: 200, body: LIVE }] });
+    await createCalendar(ENV, fetchFn).describeEvent('abc123', 'Agenda\n\nMeeting issue: u');
+    expect(new URL(calls[1].url).searchParams.get('sendUpdates')).toBe('none');
+    expect(JSON.parse(String(calls[1].init?.body))).toEqual({ description: 'Agenda\n\nMeeting issue: u' });
+  });
+  it('raises a fixed error on failure', async () => {
+    const { fetchFn } = stubFetch({ ...TOKEN, [PATCH]: [{ status: 500, body: SECRET_BODY }] });
+    await expect(createCalendar(ENV, fetchFn).describeEvent('abc123', 'x')).rejects.toMatchObject({ kind: 'failed', message: 'Google Calendar request failed' });
+  });
+});

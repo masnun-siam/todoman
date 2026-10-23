@@ -1,6 +1,7 @@
 import type { ClaudeRequest } from './claude.js';
 import { createdItems, PROCESSING, readDump, setState, shouldProcess, thread, type CreatedItem, type Dump } from './dump.js';
 import type { ProcessGh } from './github.js';
+import type { Calendar } from './google.js';
 import { HANDLERS, type ItemHandler } from './handlers.js';
 import { parsePeople, type Person } from './invitees.js';
 import { nextKey } from './keys.js';
@@ -15,6 +16,7 @@ import { validate, type Question } from './validate.js';
 
 export interface ProcessDeps {
   gh: ProcessGh;
+  calendar: Calendar;
   /** Data repo full name, `owner/repo`. */
   repo: string;
   issue: number;
@@ -88,7 +90,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump): Promise<{ results: ItemR
       continue;
     }
     try {
-      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch {
       results.push({ type: item.type, ok: false, title, reason: 'creating it failed' }); // fixed text: never an error body
     }
