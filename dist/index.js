@@ -32230,7 +32230,7 @@ var import_yaml = __toESM(require_dist(), 1);
 function parsePeople(text2) {
   try {
     const people = (0, import_yaml.parse)(text2);
-    const ok = Array.isArray(people) && people.every((p) => p && typeof p.name === "string" && typeof p.email === "string" && Array.isArray(p.aliases));
+    const ok = Array.isArray(people) && people.every((p) => p && typeof p.name === "string" && typeof p.email === "string" && Array.isArray(p.aliases) && p.aliases.every((a) => typeof a === "string"));
     return ok ? people : null;
   } catch {
     return null;

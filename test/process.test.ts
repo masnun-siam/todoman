@@ -446,6 +446,16 @@ describe('processDump meetings (FR-4, FR-4a, FR-8)', () => {
     expect(writes).toContain('close#5');
   });
 
+  it('a people.yml with a non-string alias lists every attendee to invite manually instead of failing', async () => {
+    const { gh, writes } = fakeGh(dumpIssue({ title }));
+    gh.fileText = async () => '- name: Asif\n  aliases: [123]\n  email: asif@example.com\n';
+    await run(gh, { items: [prd], questions: [] }, [meetingHandler], fakeCalendar().calendar);
+    const [c] = comments(writes);
+    expect(c).toContain('asif — not in people.yml, invite manually');
+    expect(writes).not.toContain('+failed#5');
+    expect(writes).toContain('close#5');
+  });
+
   it('a retry after the event was made but the issue failed makes one issue and no second event', async () => {
     const issues: Issue[] = [];
     const cal = fakeCalendar();
