@@ -32598,6 +32598,7 @@ var taskHandler = {
 
 // src/handlers/tracking.ts
 var LABEL_MAX = 50;
+var TITLE_MAX = 256;
 var sameRef = (a, b) => a.toLowerCase() === b.toLowerCase();
 async function existing(ctx, ref) {
   const open2 = await ctx.gh.openIssues("tracking");
@@ -32634,7 +32635,7 @@ var trackingHandler = {
     const open2 = await existing(ctx, ref);
     if (open2) return addNote(ctx, open2, ref, item.note);
     const ext = await ctx.external().readExternal(r);
-    const title = ext.access ? `${ref}: ${ext.title}` : ref;
+    const title = (ext.access ? `${ref}: ${ext.title}` : ref).slice(0, TITLE_MAX);
     const body = [
       `Tracks https://github.com/${r.owner}/${r.repo}/issues/${r.number}`,
       ext.access ? `State: ${ext.state}` : "",

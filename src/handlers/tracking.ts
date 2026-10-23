@@ -4,6 +4,7 @@ import type { Created, ItemContext, ItemHandler } from '../handlers.js';
 import { itemMarker, parseItemMarkers, parseRefMarkers, refMarker } from '../markers.js';
 
 const LABEL_MAX = 50; // GitHub's label name limit
+const TITLE_MAX = 256; // GitHub's issue title limit; a long external title must not fail the item
 const sameRef = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase(); // owners and repos are case-insensitive
 
 /** Oldest open, bot-authored `tracking` issue whose body carries the ref marker (the dedupe key; the repo label is not). */
@@ -52,7 +53,7 @@ export const trackingHandler: ItemHandler = {
     if (open) return addNote(ctx, open, ref, item.note);
 
     const ext = await ctx.external().readExternal(r);
-    const title = ext.access ? `${ref}: ${ext.title}` : ref;
+    const title = (ext.access ? `${ref}: ${ext.title}` : ref).slice(0, TITLE_MAX);
     const body = [
       `Tracks https://github.com/${r.owner}/${r.repo}/issues/${r.number}`,
       ext.access ? `State: ${ext.state}` : '',

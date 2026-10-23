@@ -75,6 +75,14 @@ describe('trackingHandler (FR-5)', () => {
     expect(b.labels).toEqual([]);
   });
 
+  it('caps the title at the 256-character GitHub limit', async () => {
+    const { ctx, created } = setup({ ext: { access: true, title: 'x'.repeat(300), state: 'closed' } });
+    await trackingHandler.create(item(), ctx);
+    expect(created[0].title).toHaveLength(256);
+    expect(created[0].title.startsWith(`${REF}: x`)).toBe(true);
+    expect(created[0].body).toContain('State: closed');
+  });
+
   it('still creates the issue without the repo label when the label cannot be made', async () => {
     const { ctx, created } = setup({ labelFails: true });
     await trackingHandler.create(item(), ctx);
