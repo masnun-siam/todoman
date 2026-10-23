@@ -1,8 +1,10 @@
 import { localDate, localTime } from '../dates.js';
 import { eventId } from '../eventId.js';
+import { ItemError } from '../failure.js';
 import type { ItemHandler } from '../handlers.js';
 import { itemMarker } from '../markers.js';
 
+const EVENT_EXISTS = 'the calendar event exists and invites were sent';
 export const SUMMARY_PROMPT = 'Add the meeting summary as a comment';
 
 /**
@@ -28,7 +30,7 @@ export const meetingHandler: ItemHandler = {
       description: item.agenda,
     });
     const title = `Meeting: ${item.title}`;
-    if (ev.status === 'deleted') return { title, details: ['the calendar event was deleted'] }; // done; never recreated
+    if (ev.status === 'deleted') return { title, details: ['the calendar event was deleted'], labels: [] }; // done; never recreated
 
     const weekday = new Intl.DateTimeFormat('en-US', { timeZone: ctx.tz, weekday: 'short' }).format(start);
     const date = `${weekday} ${localDate(start, ctx.tz)}`;
@@ -50,13 +52,15 @@ export const meetingHandler: ItemHandler = {
     ]
       .filter(Boolean)
       .join('\n\n');
-    const issue = await ctx.gh.createIssue({ title, body, labels: ['meeting'], assignees: [ctx.owner] });
+    const issue = await ctx.gh.createIssue({ title, body, labels: ['meeting'], assignees: [ctx.owner] }).catch((e: unknown) => {
+      throw ev.status === 'existing' ? new ItemError(e, EVENT_EXISTS) : e;
+    });
 
     const details = [`${date} ${time}`, duration, `invited: ${invited}`, ...item.skipped];
     // ponytail: the issue exists now, so a failed link is reported, not retried; FR-8 would skip the item
     await ctx.calendar.describeEvent(id, [item.agenda, `Meeting issue: ${issue.url}`].filter(Boolean).join('\n\n')).catch(() => {
       details.push('the calendar event does not link this issue');
     });
-    return { title: issue.title, url: issue.url, details };
+    return { title: issue.title, url: issue.url, details, labels: issue.labels };
   },
 };

@@ -29,6 +29,13 @@ const GOOGLE: Record<GoogleError['kind'], string> = {
   failed: 'a Google Calendar request failed. If it keeps failing, check the Google Workspace status page.',
 };
 
+/** An item failure that adds a fixed note to the result row; `cause` still picks the message. */
+export class ItemError extends Error {
+  constructor(readonly cause: unknown, readonly note: string) {
+    super(note);
+  }
+}
+
 /** A fixed message with its fix; never the error's own text, which may hold an API body or a secret. */
 export function failureMessage(e: unknown): string {
   if (e instanceof ClaudeError) return CLAUDE[e.kind];

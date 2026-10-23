@@ -37,7 +37,7 @@ describe('taskHandler (FR-3)', () => {
     expect(i.body).toContain('Due: 2026-10-23');
     expect(i.body).toContain('Source dump: https://github.com/o/r/issues/5');
     expect(parseItemMarkers([{ author: BOT, body: i.body }])).toEqual([{ repo: 'o/r', dump: 5, key: 'i3' }]);
-    expect(got).toEqual({ title: 'Finish the tax form', url: 'https://github.com/o/r/issues/9', details: ['Due: 2026-10-23'] });
+    expect(got).toEqual({ title: 'Finish the tax form', url: 'https://github.com/o/r/issues/9', details: ['Due: 2026-10-23'], labels: ['task', 'area:home'] });
   });
   it('leaves out the due line and empty body when not given', async () => {
     const { c, sent } = ctx();

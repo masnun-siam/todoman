@@ -61,7 +61,7 @@ describe('trackingHandler (FR-5)', () => {
     expect(i.body).toContain('Source dump: https://github.com/o/r/issues/5');
     expect(parseRefMarkers([{ author: BOT, body: i.body }])).toEqual([REF]);
     expect(parseItemMarkers([{ author: BOT, body: i.body }])).toEqual([{ repo: 'o/r', dump: 5, key: 'i2' }]);
-    expect(got).toEqual({ title: `${REF}: Fix login`, url: 'https://github.com/o/r/issues/40', details: [] });
+    expect(got).toEqual({ title: `${REF}: Fix login`, url: 'https://github.com/o/r/issues/40', details: [], labels: ['tracking', 'repo:masnun-siam/meeting-manager'] });
   });
 
   it('truncates the repo label to 50 characters and reuses an existing one in its own spelling', async () => {
@@ -108,7 +108,7 @@ describe('trackingHandler (FR-5)', () => {
     expect(comments[0].n).toBe(12);
     expect(comments[0].body).toContain('merged yet?');
     expect(parseItemMarkers([{ author: BOT, body: comments[0].body }])).toEqual([{ repo: 'o/r', dump: 5, key: 'i2', ref: 'Masnun-Siam/Meeting-Manager#85' }]);
-    expect(got).toEqual({ title: `${REF}: Fix login`, url: 'https://github.com/o/r/issues/12', details: ['added note to existing #12'] });
+    expect(got).toEqual({ title: `${REF}: Fix login`, url: 'https://github.com/o/r/issues/12', details: ['added note to existing #12'], labels: ['tracking'] });
   });
 
   it('never posts the same note twice for one dump and ref', async () => {

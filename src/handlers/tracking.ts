@@ -24,7 +24,7 @@ async function addNote(ctx: ItemContext, issue: Issue, ref: string, note: string
     const marker = itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, ref });
     await ctx.gh.comment(issue.number, [note, `Source dump: ${ctx.dump.url}`, marker].join('\n\n'));
   }
-  return { title: issue.title, url: issue.url, details: [`added note to existing #${issue.number}`] };
+  return { title: issue.title, url: issue.url, details: [`added note to existing #${issue.number}`], labels: issue.labels };
 }
 
 /** Best effort: the `repo:` label when it exists or can be created, else none. */
@@ -67,6 +67,6 @@ export const trackingHandler: ItemHandler = {
     const labels = ['tracking', ...(await repoLabel(ctx, r))];
     const issue = await ctx.gh.createIssue({ title, body, labels, assignees: [ctx.owner] });
     const access = ext.access ? [] : [`access missing: no read token for ${r.owner} can read ${ref}, so only the reference is shown`];
-    return { title: issue.title, url: issue.url, details: access };
+    return { title: issue.title, url: issue.url, details: access, labels: issue.labels };
   },
 };
