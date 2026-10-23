@@ -32703,7 +32703,7 @@ var meetingHandler = {
       SUMMARY_PROMPT
     ].filter(Boolean).join("\n\n");
     const issue2 = await ctx.gh.createIssue({ title, body, labels: ["meeting"], assignees: [ctx.owner] }).catch((e) => {
-      throw ev.status === "existing" ? new ItemError(e, EVENT_EXISTS) : e;
+      throw new ItemError(e, EVENT_EXISTS);
     });
     const details = [`${date} ${time}`, duration, `invited: ${invited}`, ...item.skipped];
     await ctx.calendar.describeEvent(id, [item.agenda, `Meeting issue: ${issue2.url}`].filter(Boolean).join("\n\n")).catch(() => {

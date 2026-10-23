@@ -481,6 +481,9 @@ describe('processDump meetings (FR-4, FR-4a, FR-8)', () => {
     };
     await run(first.gh, { items: [prd], questions: [] }, [meetingHandler], cal.calendar);
     expect(first.writes).toContain('+failed#5');
+    const [row] = comments(first.writes);
+    expect(row).toContain('| meeting | PRD review with Asif | — | not created: failed while creating items: an unexpected error occurred. If it keeps failing, check the workflow run log. The calendar event exists and invites were sent. |');
+    expect(first.writes.join()).not.toContain('github down');
 
     const retry = fakeGh(dumpIssue({ title, labels: ['failed'] }), [comment(10, BOT, readMarker(0)), comment(12, OWNER, 'retry')], { issues });
     await run(retry.gh, { items: [prd], questions: [] }, [meetingHandler], cal.calendar);

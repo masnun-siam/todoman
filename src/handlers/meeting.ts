@@ -53,7 +53,7 @@ export const meetingHandler: ItemHandler = {
       .filter(Boolean)
       .join('\n\n');
     const issue = await ctx.gh.createIssue({ title, body, labels: ['meeting'], assignees: [ctx.owner] }).catch((e: unknown) => {
-      throw ev.status === 'existing' ? new ItemError(e, EVENT_EXISTS) : e;
+      throw new ItemError(e, EVENT_EXISTS); // created or existing: invites went out either way
     });
 
     const details = [`${date} ${time}`, duration, `invited: ${invited}`, ...item.skipped];
