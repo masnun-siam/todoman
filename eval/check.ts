@@ -21,7 +21,7 @@ export interface Fixture {
 
 function field(item: ValidItem, key: string): unknown {
   const v = (item as Record<string, unknown>)[key];
-  if (key === 'invitees') return (v as Person[]).map((p) => p.name.toLowerCase()).sort();
+  if (key === 'invitees') return (v as Person[] | undefined)?.map((p) => p.name.toLowerCase()).sort();
   if (key === 'start') return Date.parse(v as string); // same instant, whatever the offset
   return v;
 }
