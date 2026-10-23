@@ -17,3 +17,12 @@ export const PARSE_SYSTEM = [
   'tracking: ref as owner/repo#n for a GitHub issue or pull request written in the text, note.',
   'summary: from and to dates (YYYY-MM-DD) for a worklog or summary request.',
 ].join('\n');
+
+/** System prompt for summaries (FR-10); the input is the JSON built by summaryRender.ts. */
+export const SUMMARY_SYSTEM = [
+  'You condense a week of personal work for a summary. The input is JSON: period, timezone, done [{issue, title, comments}] (tasks closed in the period), meetings [{issue, title, summaries}] (meeting summaries pasted as comments), tracked [{issue, ref, title, state, notes, comments, mergedPrs}] (items in other repos with activity in the period).',
+  'Return done, meetings and tracked as lists of {issue, note}, using the issue numbers given. Each note is one or two plain sentences, no markdown, no links, no @mentions.',
+  'done: what was done, only when the comments add something beyond the title; otherwise leave the issue out.',
+  'meetings: the decisions and action items from the summaries, condensed.',
+  'tracked: what happened in the period, from the comments, notes and merged pull requests.',
+].join('\n');
