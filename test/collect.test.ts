@@ -68,22 +68,23 @@ describe('collect', () => {
   it('includes every open task, even one untouched in the period', async () => {
     const gh = stub({ all: [issue(1, { updatedAt: BEFORE }), issue(2, { updatedAt: BEFORE, state: 'closed', closedAt: BEFORE })] });
     expect(numbers(await collect(gh, noReader, OWNER, P))).toEqual([1]);
+    expect(gh.listComments).not.toHaveBeenCalled(); // untouched since before the period: no in-period comment
   });
 
   it('includes meetings starting in the period (with all comments) and open ones in the next 7 days', async () => {
     const gh = stub({
       all: [
-        meeting(1, '2026-10-20T05:00:00.000Z', { state: 'closed' }), // in period
+        meeting(1, '2026-10-20T05:00:00.000Z', { state: 'closed' }), // in period, last updated before it
         meeting(2, '2026-10-25T05:00:00.000Z'), // next 7 days
         meeting(3, '2026-10-25T05:00:00.000Z', { state: 'closed' }), // next 7 days but closed
         meeting(4, '2026-11-05T05:00:00.000Z'), // too far ahead
         meeting(5, '2026-10-01T05:00:00.000Z'), // long past
       ],
-      comments: { 1: [c('2026-10-23T00:00:00Z', 'summary after the period')] },
+      comments: { 1: [c('2026-10-10T00:00:00Z', 'notes before the period')] },
     });
     const got = await collect(gh, noReader, OWNER, P);
     expect(numbers(got)).toEqual([1, 2]);
-    expect(got.issues.find((i) => i.number === 1)).toMatchObject({ start: '2026-10-20T05:00:00.000Z', comments: [{ body: 'summary after the period' }] });
+    expect(got.issues.find((i) => i.number === 1)).toMatchObject({ start: '2026-10-20T05:00:00.000Z', comments: [{ body: 'notes before the period' }] });
   });
 
   it('ignores a meeting start forged by a non-bot author', async () => {

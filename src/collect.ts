@@ -75,9 +75,11 @@ export async function collect(gh: SummaryGh, reader: Pick<ExternalReader, 'readE
   const tracked: Tracked[] = [];
   for (const i of kept) {
     const start = startOf(i);
-    const comments = await commentsOf(i.number);
     const meetingInPeriod = i.labels.includes('meeting') && start !== undefined && inPeriod(start, p);
-    issues.push({ ...i, comments: meetingInPeriod ? comments : comments.filter((c) => inPeriod(c.createdAt, p)), ...(start ? { start } : {}) });
+    // a comment bumps updated_at, so an issue last updated before `p` has no in-period comment to read
+    const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
+    const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
+    issues.push({ ...i, comments, ...(start ? { start } : {}) });
     if (!i.labels.includes('tracking')) continue;
     const ref = parseRefMarkers([i])[0];
     const r = ref ? parseRef(ref) : null;
