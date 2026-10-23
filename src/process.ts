@@ -7,8 +7,8 @@ import { nextKey } from './keys.js';
 import { LABELS } from './labels.js';
 import { BOT } from './markers.js';
 import { MODELS, PARSE_SYSTEM } from './prompts.js';
-import { endState, resultComment, type ItemResult } from './result.js';
 import { NOTHING_FOUND, nothingFound, TOO_LONG, tooLong } from './questions.js';
+import { endState, resultComment, type ItemResult } from './result.js';
 import { PARSER_SCHEMA } from './schema.js';
 import { validate, type Question } from './validate.js';
 
