@@ -1,7 +1,20 @@
+import { parse } from 'yaml';
+
 export interface Person {
   name: string;
   aliases: string[];
   email: string;
+}
+
+/** people.yml as a list of { name, aliases[], email }; null when it does not parse or has the wrong shape. */
+export function parsePeople(text: string): Person[] | null {
+  try {
+    const people: unknown = parse(text);
+    const ok = Array.isArray(people) && people.every((p) => p && typeof p.name === 'string' && typeof p.email === 'string' && Array.isArray(p.aliases));
+    return ok ? (people as Person[]) : null;
+  } catch {
+    return null;
+  }
 }
 
 export const MAX_INVITEES = 10;
