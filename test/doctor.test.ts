@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { baseChecks, runDoctor } from '../src/doctor.js';
+import { baseChecks, runDoctor, secretChecks, type SecretDeps } from '../src/doctor.js';
 import type { Gh } from '../src/github.js';
 import { LABELS } from '../src/labels.js';
 
@@ -63,5 +63,75 @@ describe('doctor', () => {
     };
     const { lines } = await doctor(gh);
     expect(lines.join('\n')).not.toContain('ghp_SECRET');
+  });
+});
+
+const SECRETS = {
+  CLAUDE_CODE_OAUTH_TOKEN: 'sk-claude-SECRET',
+  GOOGLE_CLIENT_ID: 'cid-SECRET',
+  GOOGLE_CLIENT_SECRET: 'csecret-SECRET',
+  GOOGLE_REFRESH_TOKEN: 'rtoken-SECRET',
+  GH_READ_TOKENS: '{"masnun-siam":"ghp_A-SECRET","acme":"ghp_B-SECRET"}',
+};
+function deps(over: Partial<SecretDeps> = {}) {
+  const calls: string[] = [];
+  const d: SecretDeps = {
+    claude: async () => {
+      calls.push('claude');
+      return { ok: true };
+    },
+    probeCalendar: async () => 'ok',
+    canReadOwner: async (_t, o) => (calls.push(`read ${o}`), true),
+    ...over,
+  };
+  return { d, calls };
+}
+const secretDoctor = async (env: Record<string, string | undefined>, d: SecretDeps) => {
+  const lines: string[] = [];
+  const result = await runDoctor(stub().gh, (l) => lines.push(l), secretChecks(env, d), 'test/fixtures').then(() => 'ok', (e: Error) => e.message);
+  return { lines, result, out: lines.join('\n') };
+};
+
+describe('doctor secret checks', () => {
+  it('passes with every secret set, running Claude once and reading each owner', async () => {
+    const { d, calls } = deps();
+    const { lines, result } = await secretDoctor(SECRETS, d);
+    expect(result).toBe('ok');
+    expect(lines.filter((l) => l.startsWith('PASS'))).toHaveLength(4);
+    expect(calls).toEqual(['claude', 'read masnun-siam', 'read acme']);
+  });
+  it('fails a missing Google secret and names it, without calling Google', async () => {
+    let probed = false;
+    const { d } = deps({ probeCalendar: async () => ((probed = true), 'ok') });
+    const { lines, result } = await secretDoctor({ ...SECRETS, GOOGLE_REFRESH_TOKEN: undefined }, d);
+    expect(result).toContain('1 check');
+    expect(lines.find((l) => l.startsWith('FAIL'))).toMatch(/^FAIL Google.*GOOGLE_REFRESH_TOKEN secret/);
+    expect(probed).toBe(false);
+  });
+  it('names each missing secret', async () => {
+    const { out, result } = await secretDoctor({}, deps().d);
+    expect(result).toContain('3 check');
+    for (const n of ['CLAUDE_CODE_OAUTH_TOKEN', 'GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET, GOOGLE_REFRESH_TOKEN', 'GH_READ_TOKENS']) expect(out).toContain(n);
+  });
+  it('reports a missing scope and an unreadable calendar with their own fixes', async () => {
+    expect((await secretDoctor(SECRETS, deps({ probeCalendar: async () => 'scope' }).d)).out).toContain('calendar.events scope');
+    expect((await secretDoctor(SECRETS, deps({ probeCalendar: async () => 'read' }).d)).out).toContain('primary calendar;');
+  });
+  it('reports malformed GH_READ_TOKENS, accepts {} and names an owner whose token fails', async () => {
+    for (const bad of ['{not json', '["x"]', '{"a":1}']) {
+      expect((await secretDoctor({ ...SECRETS, GH_READ_TOKENS: bad }, deps().d)).out).toContain('FAIL GH_READ_TOKENS can read each owner: Fix the GH_READ_TOKENS secret');
+    }
+    expect((await secretDoctor({ ...SECRETS, GH_READ_TOKENS: '{}' }, deps().d)).result).toBe('ok');
+    const { out } = await secretDoctor(SECRETS, deps({ canReadOwner: async (_t, o) => o !== 'acme' }).d);
+    expect(out).toContain('token for acme (');
+    expect(out).not.toContain('masnun-siam');
+  });
+  it('never prints a token or an error body', async () => {
+    const boom = async (): Promise<never> => {
+      throw new Error('body: sk-claude-SECRET rtoken-SECRET ghp_A-SECRET');
+    };
+    const { out, result } = await secretDoctor(SECRETS, { claude: boom, probeCalendar: boom, canReadOwner: boom });
+    expect(result).toContain('3 check');
+    expect(out).not.toMatch(/-SECRET|body:/);
   });
 });

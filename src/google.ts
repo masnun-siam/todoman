@@ -35,22 +35,37 @@ const TOKEN_URL = 'https://oauth2.googleapis.com/token';
 const EVENTS_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
 const TIMEOUT_MS = 30_000; // a hung connection fails the step instead of stalling the run
 
-/** Exchanges the refresh token (scope calendar.events) for an access token. */
-export async function refreshAccessToken(env: Env, fetchFn: typeof fetch = fetch): Promise<string> {
-  const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, GOOGLE_REFRESH_TOKEN: refresh } = env;
-  if (!id || !secret || !refresh) throw new GoogleError('auth');
+/** Exchanges the refresh token for an access token and the scopes Google granted it. */
+async function refresh(env: Env, fetchFn: typeof fetch): Promise<{ token: string; scopes: string[] }> {
+  const { GOOGLE_CLIENT_ID: id, GOOGLE_CLIENT_SECRET: secret, GOOGLE_REFRESH_TOKEN: refreshToken } = env;
+  if (!id || !secret || !refreshToken) throw new GoogleError('auth');
   const res = await fetchFn(TOKEN_URL, {
     method: 'POST',
-    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refresh, grant_type: 'refresh_token' }),
+    body: new URLSearchParams({ client_id: id, client_secret: secret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
     signal: AbortSignal.timeout(TIMEOUT_MS),
   }).catch(() => {
     throw new GoogleError('failed');
   });
   if (res.status === 400 || res.status === 401) throw new GoogleError('auth'); // invalid_grant: revoked or expired
   if (!res.ok) throw new GoogleError('failed');
-  const token = ((await res.json().catch(() => ({}))) as { access_token?: unknown }).access_token;
-  if (typeof token !== 'string' || !token) throw new GoogleError('failed');
-  return token;
+  const body = (await res.json().catch(() => ({}))) as { access_token?: unknown; scope?: unknown };
+  if (typeof body.access_token !== 'string' || !body.access_token) throw new GoogleError('failed');
+  return { token: body.access_token, scopes: typeof body.scope === 'string' ? body.scope.split(' ') : [] };
+}
+
+/** Exchanges the refresh token (scope calendar.events) for an access token. */
+export const refreshAccessToken = async (env: Env, fetchFn: typeof fetch = fetch): Promise<string> => (await refresh(env, fetchFn)).token;
+
+export const EVENTS_SCOPE = 'https://www.googleapis.com/auth/calendar.events';
+export type CalendarProbe = 'ok' | 'scope' | 'read';
+
+/** Doctor's read-only check: refreshes, checks the granted scope, then lists one primary event. Writes nothing. */
+export async function probeCalendar(env: Env, fetchFn: typeof fetch = fetch): Promise<CalendarProbe> {
+  const { token, scopes } = await refresh(env, fetchFn);
+  if (!scopes.includes(EVENTS_SCOPE)) return 'scope';
+  const res = await fetchFn(`${EVENTS_URL}?maxResults=1`, { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(TIMEOUT_MS) }).catch(() => undefined);
+  await res?.body?.cancel();
+  return res?.ok ? 'ok' : 'read';
 }
 
 interface GEvent {

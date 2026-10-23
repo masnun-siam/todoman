@@ -11,7 +11,7 @@ vi.mock('../src/process.js', () => ({
   processDump: async (p: { log: (l: string) => void; issue: number }) => p.log(`mode: process #${p.issue}`),
   failInterruptedRun: async (_gh: unknown, n: number, log: (l: string) => void) => log(`on-failure #${n}`),
 }));
-vi.mock('../src/doctor.js', () => ({ runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
+vi.mock('../src/doctor.js', () => ({ baseChecks: [], secretChecks: () => [], runDoctor: async (_gh: unknown, log: (l: string) => void) => log('mode: doctor') }));
 
 function event(login: string): string {
   const p = join(tmpdir(), `todoman-event-${login}.json`);

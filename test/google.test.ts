@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createCalendar, GoogleError, refreshAccessToken, type NewEvent } from '../src/google.js';
+import { createCalendar, EVENTS_SCOPE, GoogleError, probeCalendar, refreshAccessToken, type NewEvent } from '../src/google.js';
 
 const ENV = { GOOGLE_CLIENT_ID: 'cid', GOOGLE_CLIENT_SECRET: 'csecret', GOOGLE_REFRESH_TOKEN: 'rtoken' };
 const SECRET_BODY = '{"error":"boom","leak":"csecret rtoken"}';
@@ -117,5 +117,25 @@ describe('describeEvent', () => {
   it('raises a fixed error on failure', async () => {
     const { fetchFn } = stubFetch({ ...TOKEN, [PATCH]: [{ status: 500, body: SECRET_BODY }] });
     await expect(createCalendar(ENV, fetchFn).describeEvent('abc123', 'x')).rejects.toMatchObject({ kind: 'failed', message: 'Google Calendar request failed' });
+  });
+});
+
+describe('probeCalendar', () => {
+  const LIST = 'GET /calendar/v3/calendars/primary/events';
+  const token = (scope: string) => ({ 'POST /token': [{ status: 200, body: { access_token: 'at', scope } }] });
+  it('passes with calendar.events and a readable primary calendar, using only reads', async () => {
+    const { fetchFn, calls } = stubFetch({ ...token(`openid ${EVENTS_SCOPE}`), [LIST]: [{ status: 200, body: { items: [] } }] });
+    expect(await probeCalendar(ENV, fetchFn)).toBe('ok');
+    expect(calls.map((c) => c.method)).toEqual(['POST', 'GET']); // POST is the token exchange; no event is written
+    expect(new URL(calls[1].url).searchParams.get('maxResults')).toBe('1');
+  });
+  it('reports a missing scope without reading the calendar', async () => {
+    const { fetchFn, calls } = stubFetch(token('https://www.googleapis.com/auth/calendar.readonly'));
+    expect(await probeCalendar(ENV, fetchFn)).toBe('scope');
+    expect(calls).toHaveLength(1);
+  });
+  it('reports an unreadable calendar, and a refused refresh as an auth error', async () => {
+    expect(await probeCalendar(ENV, stubFetch({ ...token(EVENTS_SCOPE), [LIST]: [{ status: 403, body: SECRET_BODY }] }).fetchFn)).toBe('read');
+    await expect(probeCalendar(ENV, stubFetch({ 'POST /token': [{ status: 400, body: SECRET_BODY }] }).fetchFn)).rejects.toMatchObject({ kind: 'auth' });
   });
 });

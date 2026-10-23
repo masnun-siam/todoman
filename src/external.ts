@@ -149,3 +149,13 @@ function octokitClient(token: string): ExternalGh {
     },
   };
 }
+
+/** Doctor's check that a read token works and can see its owner; any failure is false, never an error body. */
+export async function canReadOwner(token: string, owner: string): Promise<boolean> {
+  try {
+    await github.getOctokit(token).rest.users.getByUsername({ username: owner });
+    return true;
+  } catch {
+    return false;
+  }
+}
