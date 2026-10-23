@@ -27,6 +27,8 @@ export interface Created {
   url?: string;
   /** Resolved details, e.g. 'Due: 2026-10-23' or who was invited. */
   details: string[];
+  /** Labels on that issue as GitHub reported them after the write; empty when nothing was created. */
+  labels: string[];
 }
 
 /** Creates one item of `type`; throwing marks the item failed without undoing the others. */
