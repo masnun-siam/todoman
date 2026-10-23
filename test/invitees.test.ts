@@ -1,8 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { MAX_INVITEES, resolveInvitees, type Person } from '../src/invitees.js';
+import { MAX_INVITEES, parsePeople, resolveInvitees, type Person } from '../src/invitees.js';
 
 const asif: Person = { name: 'Asif', aliases: ['ash'], email: 'asif@example.com' };
 const bob: Person = { name: 'Bob', aliases: [], email: 'bob@example.com' };
+
+describe('parsePeople', () => {
+  it('accepts a valid file, including an empty aliases list', () => {
+    expect(parsePeople('- name: Asif\n  aliases: [ash]\n  email: asif@example.com\n- name: Bob\n  aliases: []\n  email: bob@example.com\n')).toEqual([asif, bob]);
+  });
+  it('rejects an alias that is not a string', () => {
+    for (const aliases of ['[123]', '[null]', '[[x]]']) {
+      expect(parsePeople(`- name: A\n  aliases: ${aliases}\n  email: a@example.com\n`)).toBeNull();
+    }
+  });
+});
 
 describe('resolveInvitees', () => {
   it('invites only people named in the text', () => {

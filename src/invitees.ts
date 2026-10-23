@@ -10,7 +10,7 @@ export interface Person {
 export function parsePeople(text: string): Person[] | null {
   try {
     const people: unknown = parse(text);
-    const ok = Array.isArray(people) && people.every((p) => p && typeof p.name === 'string' && typeof p.email === 'string' && Array.isArray(p.aliases));
+    const ok = Array.isArray(people) && people.every((p) => p && typeof p.name === 'string' && typeof p.email === 'string' && Array.isArray(p.aliases) && p.aliases.every((a: unknown) => typeof a === 'string'));
     return ok ? (people as Person[]) : null;
   } catch {
     return null;

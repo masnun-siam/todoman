@@ -54,9 +54,11 @@ describe('doctor', () => {
     expect((await doctor(stub({ files: { '.github/workflows/summary.yml': null } }).gh)).result).toContain('failed');
   });
   it('fails when people.yml is malformed, wrong-shaped or missing', async () => {
-    for (const bad of ['a: [', '- name: A', null]) {
+    for (const bad of ['a: [', '- name: A', '- name: A\n  aliases: [123]\n  email: a@example.com\n', null]) {
       expect((await doctor(stub({ files: { 'people.yml': bad } }).gh)).result).toContain('failed');
     }
+    const { lines } = await doctor(stub({ files: { 'people.yml': '- name: A\n  aliases: [123]\n  email: a@example.com\n' } }).gh);
+    expect(lines).toContain('FAIL people.yml parses: Fix people.yml: a list of { name, aliases[], email } entries.');
   });
   it('prints a fixed message, never an error body, when GitHub fails', async () => {
     const { gh } = stub();
