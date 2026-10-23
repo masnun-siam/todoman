@@ -127,8 +127,8 @@ export function secretChecks(env: Env, deps: SecretDeps): Check[] {
 
 /** Create any missing Todoman label; existing labels (and their colours) are left alone. */
 export async function ensureLabels(gh: Gh): Promise<void> {
-  const have = new Set(await gh.labelNames());
-  for (const l of LABELS) if (!have.has(l.name)) await gh.createLabel(l.name, l.color, l.description);
+  const have = new Set((await gh.labelNames()).map((n) => n.toLowerCase())); // GitHub label names are case-insensitive
+  for (const l of LABELS) if (!have.has(l.name.toLowerCase())) await gh.createLabel(l.name, l.color, l.description);
 }
 
 /** Runs the checks, logs PASS/FAIL plus the fix per check, throws if any failed. */
