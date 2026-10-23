@@ -3,6 +3,7 @@ import type { Issue, ProcessGh } from './github.js';
 import type { Calendar } from './google.js';
 import type { ValidItem } from './validate.js';
 import { meetingHandler } from './handlers/meeting.js';
+import { summaryHandler } from './handlers/summary.js';
 import { taskHandler } from './handlers/task.js';
 import { trackingHandler } from './handlers/tracking.js';
 
@@ -18,7 +19,11 @@ export interface ItemContext {
   dump: Issue;
   /** Code-assigned key for this item; its marker goes on whatever the handler creates. */
   key: string;
+  /** FR-11: the summary for whole days `from`..`to`, reused or fresh; `marker` goes on a fresh one. */
+  summarise: Summarise;
 }
+
+export type Summarise = (from: string, to: string, marker: string) => Promise<{ issue: Issue; reused: boolean }>;
 
 /** What a handler created, as the result comment lists it. */
 export interface Created {
@@ -38,4 +43,4 @@ export interface ItemHandler {
 }
 
 /** Registered handlers, one per item type the code can create. */
-export const HANDLERS: ItemHandler[] = [taskHandler, meetingHandler, trackingHandler];
+export const HANDLERS: ItemHandler[] = [taskHandler, meetingHandler, trackingHandler, summaryHandler];

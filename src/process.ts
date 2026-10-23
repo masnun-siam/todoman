@@ -4,7 +4,7 @@ import { CANCELLED, failDump, failureComment, failureMessage, ItemError, STEPS, 
 import type { ExternalReader } from './external.js';
 import type { ProcessGh } from './github.js';
 import type { Calendar } from './google.js';
-import { HANDLERS, type ItemHandler } from './handlers.js';
+import { HANDLERS, type ItemHandler, type Summarise } from './handlers.js';
 import { parsePeople, type Person } from './invitees.js';
 import { nextKey } from './keys.js';
 import { LABELS } from './labels.js';
@@ -20,6 +20,7 @@ export interface ProcessDeps {
   gh: ProcessGh;
   calendar: Calendar;
   external: () => ExternalReader;
+  summarise: Summarise;
   /** Data repo full name, `owner/repo`. */
   repo: string;
   issue: number;
@@ -122,7 +123,7 @@ async function parseAndCreate(p: ProcessDeps, d: Dump, at: { step: Step }): Prom
       continue;
     }
     try {
-      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+      results.push({ type: item.type, ok: true, created: await handler.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, summarise: p.summarise, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
     } catch (e) {
       const note = e instanceof ItemError ? e.note : '';
       const reason = `failed while ${STEPS.create}: ${failureMessage(e instanceof ItemError ? e.cause : e)}`; // fixed text: never an error body

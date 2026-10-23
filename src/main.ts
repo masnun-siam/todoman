@@ -1,17 +1,34 @@
 import * as core from '@actions/core';
 import { loadConfig, type Env } from './config.js';
 import { installClaude, runClaude } from './claude.js';
-import { eventActor, eventIssue, isOwner } from './gate.js';
+import { eventActor, eventDates, eventIssue, isOwner } from './gate.js';
 import { baseChecks, runDoctor, secretChecks } from './doctor.js';
 import { canReadOwner, createReader, type ExternalReader } from './external.js';
 import { createGh } from './github.js';
 import { createCalendar, probeCalendar } from './google.js';
 import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
-import { weeklySummary } from './summary.js';
+import { onDemandSummary, weeklySummary, type SummaryDeps } from './summary.js';
+import { periodProblem } from './validate.js';
 
 export const MODES = ['process', 'summary', 'doctor'] as const;
 export type Mode = (typeof MODES)[number];
+
+/** What a summary needs; Claude is installed only when there is text to condense, the reader built on first tracking issue. */
+function summaryDeps(env: Env): SummaryDeps {
+  const { owner, tz } = loadConfig(env);
+  let bin: string | undefined;
+  let reader: ExternalReader | undefined; // so a bad GH_READ_TOKENS spares a summary without tracking issues
+  return {
+    gh: createGh(env),
+    reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
+    owner,
+    tz,
+    now: () => new Date(),
+    claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? '', bin: (bin ??= installClaude(env.GITHUB_ACTION_PATH ?? '.')) }),
+    log: core.info,
+  };
+}
 
 const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
   process: (env) => {
@@ -26,6 +43,7 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
       gh,
       calendar: createCalendar(env),
       external: () => (reader ??= createReader(env)),
+      summarise: (from, to, marker) => onDemandSummary(summaryDeps(env), from, to, marker),
       repo: env.GITHUB_REPOSITORY ?? '',
       issue,
       owner,
@@ -35,19 +53,13 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
       log: core.info,
     });
   },
-  summary: (env) => {
-    const { owner, tz } = loadConfig(env);
-    let bin: string | undefined; // installed only when the summary has text to condense
-    let reader: ExternalReader | undefined; // built on first tracking issue, so a bad GH_READ_TOKENS spares a summary without any
-    return weeklySummary({
-      gh: createGh(env),
-      reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
-      owner,
-      tz,
-      now: () => new Date(),
-      claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? '', bin: (bin ??= installClaude(env.GITHUB_ACTION_PATH ?? '.')) }),
-      log: core.info,
-    });
+  summary: async (env) => {
+    const { from, to } = eventDates(env);
+    if (!from && !to) return weeklySummary(summaryDeps(env)); // schedule, or a dispatch without dates (FR-10)
+    const problem = periodProblem(from, to);
+    if (problem) throw new Error(`summary: ${problem} Give from and to as YYYY-MM-DD.`);
+    const { issue, reused } = await onDemandSummary(summaryDeps(env), from, to);
+    core.info(`${reused ? 'Existing summary' : 'Summary'}: ${issue.url}`);
   },
   doctor: (env) =>
     runDoctor(createGh(env), core.info, [

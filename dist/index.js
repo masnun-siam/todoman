@@ -27846,6 +27846,10 @@ function eventActor(env) {
 function eventIssue(env) {
   return readEvent(env).issue?.number;
 }
+function eventDates(env) {
+  const i = readEvent(env).inputs;
+  return { from: i?.from?.trim() ?? "", to: i?.to?.trim() ?? "" };
+}
 function isOwner(actor, owner) {
   return actor === owner;
 }
@@ -32709,6 +32713,16 @@ var meetingHandler = {
   }
 };
 
+// src/handlers/summary.ts
+var summaryHandler = {
+  type: "summary",
+  async create(item, ctx) {
+    if (item.type !== "summary") throw new Error("not a summary");
+    const { issue: issue2, reused } = await ctx.summarise(item.from, item.to, itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key }));
+    return { title: issue2.title, url: issue2.url, details: reused ? [`existing #${issue2.number}`] : [], labels: issue2.labels };
+  }
+};
+
 // src/handlers/task.ts
 var taskHandler = {
   type: "task",
@@ -32777,7 +32791,7 @@ var trackingHandler = {
 };
 
 // src/handlers.ts
-var HANDLERS = [taskHandler, meetingHandler, trackingHandler];
+var HANDLERS = [taskHandler, meetingHandler, trackingHandler, summaryHandler];
 
 // src/keys.ts
 function nextKey(markers, dump) {
@@ -32785,62 +32799,62 @@ function nextKey(markers, dump) {
   return `i${Math.max(0, ...used) + 1}`;
 }
 
-// src/match.ts
-var normTitle = (t) => t.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
-function isCreated(item, created) {
-  if (item.type === "meeting") {
-    const at = Date.parse(item.start);
-    return created.some((c) => c.type === "meeting" && c.start !== void 0 && Date.parse(c.start) === at);
+// src/collect.ts
+var MAX_ISSUES = 300;
+var NEXT_MS = 7 * 864e5;
+var TODOMAN_LABELS = LABELS.map((l) => l.name);
+var isDump = (i, owner) => i.author === owner && (!i.labels.some((l) => TODOMAN_LABELS.includes(l)) || i.labels.some((l) => STATE_LABELS.includes(l)));
+var counts = (i, owner) => !isDump(i, owner) && !i.labels.includes("summary");
+var startOf = (i) => parseItemMarkers([i]).find((m) => m.start)?.start;
+async function collect(gh, reader, owner, p) {
+  const [updated, openTasks, meetings, openTracking] = await Promise.all([
+    gh.issuesUpdatedSince(p.from),
+    gh.issuesLabelled("task", "open"),
+    gh.issuesLabelled("meeting", "all"),
+    gh.issuesLabelled("tracking", "open")
+  ]);
+  const allComments = /* @__PURE__ */ new Map();
+  const commentsOf = async (n) => {
+    if (!allComments.has(n)) allComments.set(n, await gh.listComments(n));
+    return allComments.get(n) ?? [];
+  };
+  const active2 = [];
+  for (const i of updated.filter((x) => counts(x, owner) && Date.parse(x.createdAt) < Date.parse(p.to))) {
+    const touched = [i.createdAt, i.updatedAt, i.closedAt].some((t) => t && inPeriod(t, p));
+    if (touched || (await commentsOf(i.number)).some((c) => inPeriod(c.createdAt, p))) active2.push(i);
   }
-  if (item.type === "tracking") {
-    const ref = item.ref.toLowerCase();
-    return created.some((c) => c.type === "tracking" && c.ref?.toLowerCase() === ref);
+  const next = { from: p.to, to: new Date(Date.parse(p.to) + NEXT_MS).toISOString() };
+  const meetingsKept = meetings.filter((i) => {
+    const start = startOf(i);
+    return start !== void 0 && (inPeriod(start, p) || i.state === "open" && inPeriod(start, next));
+  });
+  const byNumber = /* @__PURE__ */ new Map();
+  for (const i of [...active2, ...openTasks, ...meetingsKept, ...openTracking]) if (counts(i, owner)) byNumber.set(i.number, i);
+  const all = [...byNumber.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const kept = all.slice(0, MAX_ISSUES);
+  const issues = [];
+  const tracked = [];
+  for (const i of kept) {
+    const start = startOf(i);
+    const meetingInPeriod = i.labels.includes("meeting") && start !== void 0 && inPeriod(start, p);
+    const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
+    const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
+    issues.push({ ...i, comments, ...start ? { start } : {} });
+    if (!i.labels.includes("tracking")) continue;
+    const ref = parseRefMarkers([i])[0];
+    const r = ref ? parseRef(ref) : null;
+    if (r) tracked.push({ issue: i.number, ref, activity: await reader.readExternalActivity(r, p) });
   }
-  if (item.type !== "task") return false;
-  const title = normTitle(item.title);
-  return created.some((c) => c.type === item.type && normTitle(c.title) === title);
+  return { issues, leftOut: all.length - kept.length, tracked };
 }
 
-// src/questions.ts
-var MAX_ITEMS = 10;
-var MAX_DUMP_CHARS = 1e4;
-var REPLY = "Reply here to answer.";
-var whole = (question) => ({ about: "", question });
-var TOO_LONG = whole(`This dump is over ${MAX_DUMP_CHARS.toLocaleString("en-US")} characters, so I created nothing. Please split it into smaller dumps.`);
-var TOO_MANY = whole(`This dump has more than ${MAX_ITEMS} items, so I created nothing. Please split it into dumps of ${MAX_ITEMS} items or fewer.`);
-var NOTHING_FOUND = whole("I couldn't find a task, meeting or reference in this.");
-var tooLong = (issue2) => issue2.title.length + issue2.body.length > MAX_DUMP_CHARS;
-var nothingFound = (items, questions, created) => items + questions + created === 0;
-function questionBlock(questions) {
-  if (questions.length === 1 && !questions[0].about) return `${questions[0].question} ${REPLY}`;
-  return ["Questions:", ...questions.map((q) => `- ${q.about ? `${q.about}: ` : ""}${q.question}`), "", REPLY].join("\n");
-}
-
-// src/result.ts
-function endState(results, questions) {
-  if (results.some((r) => !r.ok)) return "failed";
-  return questions.length ? "needs-info" : "processed";
-}
-var cell = (s) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/[|[\]]/g, (c) => `\\${c}`);
-var codes = (labels) => labels.map((l) => l.includes("`") ? cell(l) : `\`${l.replace(/\|/g, "\\|")}\``).join(" ") || "\u2014";
-function row(r) {
-  if (!r.ok) {
-    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join("; ");
-    return `| ${cell(r.type)} | ${cell(r.title)} | \u2014 | ${cell(details)} |`;
-  }
-  const c = r.created;
-  const title = c.url ? `[${cell(c.title)}](${c.url})` : cell(c.title);
-  return `| ${cell(r.type)} | ${title} | ${codes(c.labels)} | ${cell(c.details.join("; ")) || "\u2014"} |`;
-}
-var table = (results) => ["| Type | Item | Labels | Details |", "| --- | --- | --- | --- |", ...results.map(row)].join("\n");
-function resultComment(results, questions, state, read) {
-  const parts = [];
-  if (results.length) parts.push(table(results));
-  if (questions.length) parts.push(questionBlock(questions));
-  if (state === "processed") parts.push("To change anything, open a new dump.");
-  if (state === "failed") parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
-  parts.push(readMarker(read));
-  return parts.join("\n\n");
+// src/periods.ts
+var WEEK_MS = 7 * 864e5;
+async function weeklyPeriod(gh, now) {
+  const summaries2 = await gh.issuesLabelled("summary", "all");
+  const tos = parseSummaryMarkers(summaries2).filter((m) => m.kind === "weekly" && !Number.isNaN(Date.parse(m.to))).map((m) => m.to);
+  const last = tos.reduce((a, b) => a && Date.parse(a) >= Date.parse(b) ? a : b, void 0);
+  return { from: last ?? new Date(now.getTime() - WEEK_MS).toISOString(), to: now.toISOString() };
 }
 
 // src/schema.ts
@@ -32896,239 +32910,6 @@ var SUMMARY_SCHEMA = {
     tracked: { type: "array", items: note }
   }
 };
-
-// src/validate.ts
-var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
-var YEAR = 365 * 864e5;
-var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
-var text = (v) => typeof v === "string" ? sanitize(v).trim() : "";
-var names = (v) => v === void 0 ? [] : Array.isArray(v) && v.every((x) => typeof x === "string") ? v : null;
-function checkTitle(raw) {
-  const title = text(raw.title);
-  if (!title) return { fail: "What should the title be?" };
-  if (title.length > 120) return { fail: "The title is over 120 characters; please shorten it." };
-  return title;
-}
-function task(raw, ctx) {
-  const title = checkTitle(raw);
-  if (typeof title !== "string") return title.fail;
-  if (raw.due !== void 0 && !isDate(raw.due)) return "What is the due date (YYYY-MM-DD)?";
-  const labels = (names(raw.labels) ?? []).map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())).filter((l) => !!l && !TODOMAN_LABELS.has(l) && !l.startsWith("repo:") && !l.startsWith("todoman:"));
-  return { type: "task", title, body: text(raw.body), labels, ...raw.due ? { due: raw.due } : {} };
-}
-function meeting(raw, ctx, seen) {
-  const title = checkTitle(raw);
-  if (typeof title !== "string") return title.fail;
-  const at = parseWithOffset(raw.start);
-  if (!at) return "When is the meeting (date, time and timezone)?";
-  if (at.getTime() <= ctx.now.getTime()) return "That meeting time is in the past; when should it be?";
-  if (at.getTime() > ctx.now.getTime() + YEAR) return "That meeting is more than a year away; when should it be?";
-  const d = raw.durationMinutes ?? 30;
-  if (typeof d !== "number" || !Number.isInteger(d) || d < 5 || d > 480) return "How long is the meeting (5 to 480 minutes)?";
-  const attendees = names(raw.attendees);
-  if (!attendees) return "Who should be invited (names only)?";
-  const agenda = text(raw.agenda).replace(/(https?:\/\/|www\.)\S+/gi, "").replace(/\s+/g, " ").trim();
-  if (agenda.length > 500) return "The agenda is over 500 characters; please shorten it.";
-  if (seen.has(at.getTime())) return "Another meeting starts at the same time; when should this one be?";
-  seen.add(at.getTime());
-  const { invited, skipped } = resolveInvitees(attendees, ctx.people, ctx.text);
-  return { type: "meeting", title, start: raw.start, durationMinutes: d, invitees: invited, skipped, agenda };
-}
-var REF2 = /^[\w.-]+\/[\w.-]+#\d+$/;
-function tracking(raw, ctx) {
-  const ref = typeof raw.ref === "string" ? raw.ref.trim() : "";
-  if (!REF2.test(ref)) return "Which issue or pull request (owner/repo#n) should be tracked?";
-  const [path, n] = ref.split("#");
-  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const lead = "(?<![\\w.-])";
-  const named = new RegExp(`${lead}${esc(path)}#${n}(?!\\d)|${lead}github\\.com/${esc(path)}/(issues|pull)/${n}(?!\\d)`, "i").test(ctx.text);
-  if (!named) return `Which issue or pull request is ${ref}? It is not mentioned in your text.`;
-  const note2 = text(raw.note);
-  if (!note2) return `What should the note on ${ref} say?`;
-  return { type: "tracking", ref, note: note2 };
-}
-function summary2(raw) {
-  const { from, to } = raw;
-  if (!isDate(from) || !isDate(to) || from > to) return "Which period should the summary cover (dates)?";
-  if (daysBetween(from, to) + 1 > 31) return "A summary covers at most 31 days; which period?";
-  return { type: "summary", from, to };
-}
-function validate(output, ctx) {
-  const o = isObj(output) ? output : {};
-  const raw = Array.isArray(o.items) ? o.items : [];
-  const questions = (Array.isArray(o.questions) ? o.questions : []).filter((q) => isObj(q) && typeof q.about === "string" && typeof q.question === "string").map((q) => ({ about: text(q.about), question: text(q.question) }));
-  if (raw.length > MAX_ITEMS) return { items: [], questions: [TOO_MANY] };
-  const items = [];
-  const seen = /* @__PURE__ */ new Set();
-  raw.forEach((r, i) => {
-    const about = isObj(r) && typeof r.title === "string" ? text(r.title) : `item ${i + 1}`;
-    const type = isObj(r) ? r.type : void 0;
-    const res = !isObj(r) ? "What should this item be?" : type === "task" ? task(r, ctx) : type === "meeting" ? meeting(r, ctx, seen) : type === "tracking" ? tracking(r, ctx) : type === "summary" ? summary2(r) : "What kind of item is this: a task, meeting, tracking note or summary?";
-    if (typeof res === "string") questions.push({ about: about || `item ${i + 1}`, question: res });
-    else items.push(res);
-  });
-  return { items, questions };
-}
-
-// src/process.ts
-var TODOMAN_LABELS2 = new Set(LABELS.map((l) => l.name));
-function buildInput(d, owner, tz, now, people, labels, created) {
-  return JSON.stringify({
-    now: now.toISOString(),
-    timezone: tz,
-    dump: { title: d.issue.title, body: d.issue.body, at: d.issue.createdAt },
-    thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? "Todoman" : "owner", at: c.createdAt, text: c.body.replace(/<!--[\s\S]*?-->/g, "").trim() })),
-    people: people.map((p) => p.name),
-    labels: labels.filter((l) => !TODOMAN_LABELS2.has(l)),
-    alreadyCreated: created.map((c) => ({ type: c.type, title: c.title }))
-  });
-}
-function parseRequest(input) {
-  return {
-    model: MODELS.parse,
-    system: PARSE_SYSTEM,
-    schema: PARSER_SCHEMA,
-    input,
-    validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
-  };
-}
-async function processDump(p) {
-  const d = await readDump(p.gh, p.issue);
-  if (!shouldProcess(d, p.owner, p.now())) {
-    p.log("Nothing to process");
-    return;
-  }
-  await setState(p.gh, d.issue, PROCESSING);
-  const read = Math.max(0, ...d.comments.map((c) => c.id));
-  const at = { step: STEPS.read };
-  try {
-    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
-    at.step = STEPS.result;
-    const state = endState(results, questions);
-    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
-    await setState(p.gh, d.issue, state);
-    if (state === "processed") await p.gh.closeCompleted(p.issue);
-    p.log(`Dump #${p.issue}: ${state}`);
-  } catch (e) {
-    await failDump(p.gh, d.issue, failureComment(at.step, failureMessage(e), read)).catch(() => void 0);
-    throw e;
-  }
-}
-async function failInterruptedRun(gh, n, log) {
-  const issue2 = await gh.getIssue(n);
-  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
-    log("Nothing to mark failed");
-    return;
-  }
-  await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
-  log(`Dump #${n}: failed`);
-}
-async function parseAndCreate(p, d, at) {
-  const [{ items: created, markers }, labels, peopleText] = await Promise.all([
-    createdItems(p.gh, p.repo, d),
-    p.gh.labelNames(),
-    p.gh.fileText("people.yml")
-  ]);
-  const people = peopleText !== null && parsePeople(peopleText) || [];
-  const now = p.now();
-  at.step = STEPS.parse;
-  const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
-  const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
-  const { items, questions } = validate(output, { now, text: ownText, labels, people });
-  at.step = STEPS.create;
-  const results = [];
-  for (const item of items.filter((i) => !isCreated(i, created))) {
-    const key = nextKey(markers, p.issue);
-    markers.push({ repo: p.repo, dump: p.issue, key });
-    const title = "title" in item ? item.title : item.type === "tracking" ? item.ref : `${item.from} \u2013 ${item.to}`;
-    const handler2 = (p.handlers ?? HANDLERS).find((h) => h.type === item.type);
-    if (!handler2) {
-      results.push({ type: item.type, ok: false, title, reason: `failed while ${STEPS.create}: this item type is not supported yet` });
-      continue;
-    }
-    try {
-      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
-    } catch (e) {
-      const note2 = e instanceof ItemError ? e.note : "";
-      const reason = `failed while ${STEPS.create}: ${failureMessage(e instanceof ItemError ? e.cause : e)}`;
-      results.push({ type: item.type, ok: false, title, reason, note: note2 });
-    }
-  }
-  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
-}
-
-// src/secrets.ts
-var NAMES = ["CLAUDE_CODE_OAUTH_TOKEN", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"];
-function maskSecrets(env, setSecret2) {
-  for (const n of NAMES) if (env[n]) setSecret2(env[n]);
-  if (env.GH_READ_TOKENS) {
-    setSecret2(env.GH_READ_TOKENS);
-    try {
-      for (const t of Object.values(JSON.parse(env.GH_READ_TOKENS))) {
-        if (typeof t === "string" && t) setSecret2(t);
-      }
-    } catch {
-    }
-  }
-}
-
-// src/collect.ts
-var MAX_ISSUES = 300;
-var NEXT_MS = 7 * 864e5;
-var TODOMAN_LABELS3 = LABELS.map((l) => l.name);
-var isDump = (i, owner) => i.author === owner && (!i.labels.some((l) => TODOMAN_LABELS3.includes(l)) || i.labels.some((l) => STATE_LABELS.includes(l)));
-var counts = (i, owner) => !isDump(i, owner) && !i.labels.includes("summary");
-var startOf = (i) => parseItemMarkers([i]).find((m) => m.start)?.start;
-async function collect(gh, reader, owner, p) {
-  const [updated, openTasks, meetings, openTracking] = await Promise.all([
-    gh.issuesUpdatedSince(p.from),
-    gh.issuesLabelled("task", "open"),
-    gh.issuesLabelled("meeting", "all"),
-    gh.issuesLabelled("tracking", "open")
-  ]);
-  const allComments = /* @__PURE__ */ new Map();
-  const commentsOf = async (n) => {
-    if (!allComments.has(n)) allComments.set(n, await gh.listComments(n));
-    return allComments.get(n) ?? [];
-  };
-  const active2 = [];
-  for (const i of updated.filter((x) => counts(x, owner) && Date.parse(x.createdAt) < Date.parse(p.to))) {
-    const touched = [i.createdAt, i.updatedAt, i.closedAt].some((t) => t && inPeriod(t, p));
-    if (touched || (await commentsOf(i.number)).some((c) => inPeriod(c.createdAt, p))) active2.push(i);
-  }
-  const next = { from: p.to, to: new Date(Date.parse(p.to) + NEXT_MS).toISOString() };
-  const meetingsKept = meetings.filter((i) => {
-    const start = startOf(i);
-    return start !== void 0 && (inPeriod(start, p) || i.state === "open" && inPeriod(start, next));
-  });
-  const byNumber = /* @__PURE__ */ new Map();
-  for (const i of [...active2, ...openTasks, ...meetingsKept, ...openTracking]) if (counts(i, owner)) byNumber.set(i.number, i);
-  const all = [...byNumber.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
-  const kept = all.slice(0, MAX_ISSUES);
-  const issues = [];
-  const tracked = [];
-  for (const i of kept) {
-    const start = startOf(i);
-    const meetingInPeriod = i.labels.includes("meeting") && start !== void 0 && inPeriod(start, p);
-    const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
-    const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
-    issues.push({ ...i, comments, ...start ? { start } : {} });
-    if (!i.labels.includes("tracking")) continue;
-    const ref = parseRefMarkers([i])[0];
-    const r = ref ? parseRef(ref) : null;
-    if (r) tracked.push({ issue: i.number, ref, activity: await reader.readExternalActivity(r, p) });
-  }
-  return { issues, leftOut: all.length - kept.length, tracked };
-}
-
-// src/periods.ts
-var WEEK_MS = 7 * 864e5;
-async function weeklyPeriod(gh, now) {
-  const summaries2 = await gh.issuesLabelled("summary", "all");
-  const tos = parseSummaryMarkers(summaries2).filter((m) => m.kind === "weekly" && !Number.isNaN(Date.parse(m.to))).map((m) => m.to);
-  const last = tos.reduce((a, b) => a && Date.parse(a) >= Date.parse(b) ? a : b, void 0);
-  return { from: last ?? new Date(now.getTime() - WEEK_MS).toISOString(), to: now.toISOString() };
-}
 
 // src/summaryRender.ts
 var NEXT_MS2 = 7 * 864e5;
@@ -33236,20 +33017,283 @@ async function weeklySummary(d) {
     return;
   }
   const p = await weeklyPeriod(d.gh, now);
+  const issue2 = await writeSummary(d, summaryTitle("Weekly summary", p, d.tz), { kind: "weekly", ...p });
+  d.log(`Weekly summary: ${issue2.url}`);
+}
+function onDemandPeriod(from, to, tz, now) {
+  const end = Math.min(Date.parse(atLocal(addDays(to, 1), "00:00", tz)), now.getTime());
+  return { from: new Date(atLocal(from, "00:00", tz)).toISOString(), to: new Date(end).toISOString() };
+}
+var onDemandTitle = (from, to) => `Summary: ${from} \u2013 ${to}`;
+async function onDemandSummary(d, from, to, extra = "") {
+  const p = onDemandPeriod(from, to, d.tz, d.now());
+  if (p.from >= p.to) throw new Error("summary: the period has not started yet");
+  const existing2 = (await d.gh.issuesLabelled("summary", "all")).find(
+    (i) => Date.parse(i.createdAt) >= Date.parse(p.to) && parseSummaryMarkers([i]).some((m) => m.from === p.from && m.to === p.to)
+  );
+  if (existing2) return { issue: existing2, reused: true };
+  return { issue: await writeSummary(d, onDemandTitle(from, to), { kind: "on-demand", ...p }, extra), reused: false };
+}
+async function writeSummary(d, title, m, extra = "") {
+  const p = { from: m.from, to: m.to };
   const c = await collect(d.gh, d.reader, d.owner, p);
   const s = sections(c, p, d.tz);
   const notes = needsClaude(s) ? toNotes(await d.claude({ model: MODELS.summary, system: SUMMARY_SYSTEM, schema: SUMMARY_SCHEMA, input: summaryInput(s, p), validate: isNotes })) : NO_NOTES;
-  const issue2 = await d.gh.createIssue({
-    title: summaryTitle("Weekly summary", p, d.tz),
-    body: renderSummary(s, notes, c.leftOut, summaryMarker({ kind: "weekly", ...p })),
-    labels: ["summary"],
-    assignees: [d.owner]
+  const marker = [summaryMarker(m), extra].filter(Boolean).join("\n");
+  return d.gh.createIssue({ title, body: renderSummary(s, notes, c.leftOut, marker), labels: ["summary"], assignees: [d.owner] });
+}
+
+// src/match.ts
+var normTitle = (t) => t.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+function isCreated(item, created) {
+  if (item.type === "meeting") {
+    const at = Date.parse(item.start);
+    return created.some((c) => c.type === "meeting" && c.start !== void 0 && Date.parse(c.start) === at);
+  }
+  if (item.type === "tracking") {
+    const ref = item.ref.toLowerCase();
+    return created.some((c) => c.type === "tracking" && c.ref?.toLowerCase() === ref);
+  }
+  const title = normTitle(item.type === "task" ? item.title : onDemandTitle(item.from, item.to));
+  return created.some((c) => c.type === item.type && normTitle(c.title) === title);
+}
+
+// src/questions.ts
+var MAX_ITEMS = 10;
+var MAX_DUMP_CHARS = 1e4;
+var REPLY = "Reply here to answer.";
+var whole = (question) => ({ about: "", question });
+var TOO_LONG = whole(`This dump is over ${MAX_DUMP_CHARS.toLocaleString("en-US")} characters, so I created nothing. Please split it into smaller dumps.`);
+var TOO_MANY = whole(`This dump has more than ${MAX_ITEMS} items, so I created nothing. Please split it into dumps of ${MAX_ITEMS} items or fewer.`);
+var NOTHING_FOUND = whole("I couldn't find a task, meeting or reference in this.");
+var tooLong = (issue2) => issue2.title.length + issue2.body.length > MAX_DUMP_CHARS;
+var nothingFound = (items, questions, created) => items + questions + created === 0;
+function questionBlock(questions) {
+  if (questions.length === 1 && !questions[0].about) return `${questions[0].question} ${REPLY}`;
+  return ["Questions:", ...questions.map((q) => `- ${q.about ? `${q.about}: ` : ""}${q.question}`), "", REPLY].join("\n");
+}
+
+// src/result.ts
+function endState(results, questions) {
+  if (results.some((r) => !r.ok)) return "failed";
+  return questions.length ? "needs-info" : "processed";
+}
+var cell = (s) => s.replace(/\s*[\r\n]+\s*/g, " ").replace(/[|[\]]/g, (c) => `\\${c}`);
+var codes = (labels) => labels.map((l) => l.includes("`") ? cell(l) : `\`${l.replace(/\|/g, "\\|")}\``).join(" ") || "\u2014";
+function row(r) {
+  if (!r.ok) {
+    const details = [`not created: ${r.reason}`, r.note].filter(Boolean).join("; ");
+    return `| ${cell(r.type)} | ${cell(r.title)} | \u2014 | ${cell(details)} |`;
+  }
+  const c = r.created;
+  const title = c.url ? `[${cell(c.title)}](${c.url})` : cell(c.title);
+  return `| ${cell(r.type)} | ${title} | ${codes(c.labels)} | ${cell(c.details.join("; ")) || "\u2014"} |`;
+}
+var table = (results) => ["| Type | Item | Labels | Details |", "| --- | --- | --- | --- |", ...results.map(row)].join("\n");
+function resultComment(results, questions, state, read) {
+  const parts = [];
+  if (results.length) parts.push(table(results));
+  if (questions.length) parts.push(questionBlock(questions));
+  if (state === "processed") parts.push("To change anything, open a new dump.");
+  if (state === "failed") parts.push(`Todoman failed while ${STEPS.create}. ${RETRY}`);
+  parts.push(readMarker(read));
+  return parts.join("\n\n");
+}
+
+// src/validate.ts
+var TODOMAN_LABELS2 = new Set(LABELS.map((l) => l.name));
+var YEAR = 365 * 864e5;
+var isObj = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var text = (v) => typeof v === "string" ? sanitize(v).trim() : "";
+var names = (v) => v === void 0 ? [] : Array.isArray(v) && v.every((x) => typeof x === "string") ? v : null;
+function checkTitle(raw) {
+  const title = text(raw.title);
+  if (!title) return { fail: "What should the title be?" };
+  if (title.length > 120) return { fail: "The title is over 120 characters; please shorten it." };
+  return title;
+}
+function task(raw, ctx) {
+  const title = checkTitle(raw);
+  if (typeof title !== "string") return title.fail;
+  if (raw.due !== void 0 && !isDate(raw.due)) return "What is the due date (YYYY-MM-DD)?";
+  const labels = (names(raw.labels) ?? []).map((l) => ctx.labels.find((r) => r.toLowerCase() === l.toLowerCase())).filter((l) => !!l && !TODOMAN_LABELS2.has(l) && !l.startsWith("repo:") && !l.startsWith("todoman:"));
+  return { type: "task", title, body: text(raw.body), labels, ...raw.due ? { due: raw.due } : {} };
+}
+function meeting(raw, ctx, seen) {
+  const title = checkTitle(raw);
+  if (typeof title !== "string") return title.fail;
+  const at = parseWithOffset(raw.start);
+  if (!at) return "When is the meeting (date, time and timezone)?";
+  if (at.getTime() <= ctx.now.getTime()) return "That meeting time is in the past; when should it be?";
+  if (at.getTime() > ctx.now.getTime() + YEAR) return "That meeting is more than a year away; when should it be?";
+  const d = raw.durationMinutes ?? 30;
+  if (typeof d !== "number" || !Number.isInteger(d) || d < 5 || d > 480) return "How long is the meeting (5 to 480 minutes)?";
+  const attendees = names(raw.attendees);
+  if (!attendees) return "Who should be invited (names only)?";
+  const agenda = text(raw.agenda).replace(/(https?:\/\/|www\.)\S+/gi, "").replace(/\s+/g, " ").trim();
+  if (agenda.length > 500) return "The agenda is over 500 characters; please shorten it.";
+  if (seen.has(at.getTime())) return "Another meeting starts at the same time; when should this one be?";
+  seen.add(at.getTime());
+  const { invited, skipped } = resolveInvitees(attendees, ctx.people, ctx.text);
+  return { type: "meeting", title, start: raw.start, durationMinutes: d, invitees: invited, skipped, agenda };
+}
+var REF2 = /^[\w.-]+\/[\w.-]+#\d+$/;
+function tracking(raw, ctx) {
+  const ref = typeof raw.ref === "string" ? raw.ref.trim() : "";
+  if (!REF2.test(ref)) return "Which issue or pull request (owner/repo#n) should be tracked?";
+  const [path, n] = ref.split("#");
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const lead = "(?<![\\w.-])";
+  const named = new RegExp(`${lead}${esc(path)}#${n}(?!\\d)|${lead}github\\.com/${esc(path)}/(issues|pull)/${n}(?!\\d)`, "i").test(ctx.text);
+  if (!named) return `Which issue or pull request is ${ref}? It is not mentioned in your text.`;
+  const note2 = text(raw.note);
+  if (!note2) return `What should the note on ${ref} say?`;
+  return { type: "tracking", ref, note: note2 };
+}
+function periodProblem(from, to) {
+  if (!isDate(from) || !isDate(to) || from > to) return "Which period should the summary cover (dates)?";
+  if (daysBetween(from, to) + 1 > 31) return "A summary covers at most 31 days; which period?";
+  return null;
+}
+function summary2(raw) {
+  const { from, to } = raw;
+  return periodProblem(from, to) ?? { type: "summary", from, to };
+}
+function validate(output, ctx) {
+  const o = isObj(output) ? output : {};
+  const raw = Array.isArray(o.items) ? o.items : [];
+  const questions = (Array.isArray(o.questions) ? o.questions : []).filter((q) => isObj(q) && typeof q.about === "string" && typeof q.question === "string").map((q) => ({ about: text(q.about), question: text(q.question) }));
+  if (raw.length > MAX_ITEMS) return { items: [], questions: [TOO_MANY] };
+  const items = [];
+  const seen = /* @__PURE__ */ new Set();
+  raw.forEach((r, i) => {
+    const about = isObj(r) && typeof r.title === "string" ? text(r.title) : `item ${i + 1}`;
+    const type = isObj(r) ? r.type : void 0;
+    const res = !isObj(r) ? "What should this item be?" : type === "task" ? task(r, ctx) : type === "meeting" ? meeting(r, ctx, seen) : type === "tracking" ? tracking(r, ctx) : type === "summary" ? summary2(r) : "What kind of item is this: a task, meeting, tracking note or summary?";
+    if (typeof res === "string") questions.push({ about: about || `item ${i + 1}`, question: res });
+    else items.push(res);
   });
-  d.log(`Weekly summary: ${issue2.url}`);
+  return { items, questions };
+}
+
+// src/process.ts
+var TODOMAN_LABELS3 = new Set(LABELS.map((l) => l.name));
+function buildInput(d, owner, tz, now, people, labels, created) {
+  return JSON.stringify({
+    now: now.toISOString(),
+    timezone: tz,
+    dump: { title: d.issue.title, body: d.issue.body, at: d.issue.createdAt },
+    thread: thread(d, owner).map((c) => ({ from: c.author === BOT ? "Todoman" : "owner", at: c.createdAt, text: c.body.replace(/<!--[\s\S]*?-->/g, "").trim() })),
+    people: people.map((p) => p.name),
+    labels: labels.filter((l) => !TODOMAN_LABELS3.has(l)),
+    alreadyCreated: created.map((c) => ({ type: c.type, title: c.title }))
+  });
+}
+function parseRequest(input) {
+  return {
+    model: MODELS.parse,
+    system: PARSE_SYSTEM,
+    schema: PARSER_SCHEMA,
+    input,
+    validate: (v) => typeof v === "object" && v !== null && Array.isArray(v.items)
+  };
+}
+async function processDump(p) {
+  const d = await readDump(p.gh, p.issue);
+  if (!shouldProcess(d, p.owner, p.now())) {
+    p.log("Nothing to process");
+    return;
+  }
+  await setState(p.gh, d.issue, PROCESSING);
+  const read = Math.max(0, ...d.comments.map((c) => c.id));
+  const at = { step: STEPS.read };
+  try {
+    const { results, questions } = tooLong(d.issue) ? { results: [], questions: [TOO_LONG] } : await parseAndCreate(p, d, at);
+    at.step = STEPS.result;
+    const state = endState(results, questions);
+    await p.gh.comment(p.issue, resultComment(results, questions, state, read));
+    await setState(p.gh, d.issue, state);
+    if (state === "processed") await p.gh.closeCompleted(p.issue);
+    p.log(`Dump #${p.issue}: ${state}`);
+  } catch (e) {
+    await failDump(p.gh, d.issue, failureComment(at.step, failureMessage(e), read)).catch(() => void 0);
+    throw e;
+  }
+}
+async function failInterruptedRun(gh, n, log) {
+  const issue2 = await gh.getIssue(n);
+  if (issue2.state !== "open" || !issue2.labels.includes(PROCESSING)) {
+    log("Nothing to mark failed");
+    return;
+  }
+  await failDump(gh, issue2, failureComment(STEPS.run, CANCELLED));
+  log(`Dump #${n}: failed`);
+}
+async function parseAndCreate(p, d, at) {
+  const [{ items: created, markers }, labels, peopleText] = await Promise.all([
+    createdItems(p.gh, p.repo, d),
+    p.gh.labelNames(),
+    p.gh.fileText("people.yml")
+  ]);
+  const people = peopleText !== null && parsePeople(peopleText) || [];
+  const now = p.now();
+  at.step = STEPS.parse;
+  const output = await p.claude(parseRequest(buildInput(d, p.owner, p.tz, now, people, labels, created)));
+  const ownText = [d.issue.title, d.issue.body, ...d.comments.filter((c) => c.author === p.owner).map((c) => c.body)].join("\n");
+  const { items, questions } = validate(output, { now, text: ownText, labels, people });
+  at.step = STEPS.create;
+  const results = [];
+  for (const item of items.filter((i) => !isCreated(i, created))) {
+    const key = nextKey(markers, p.issue);
+    markers.push({ repo: p.repo, dump: p.issue, key });
+    const title = "title" in item ? item.title : item.type === "tracking" ? item.ref : `${item.from} \u2013 ${item.to}`;
+    const handler2 = (p.handlers ?? HANDLERS).find((h) => h.type === item.type);
+    if (!handler2) {
+      results.push({ type: item.type, ok: false, title, reason: `failed while ${STEPS.create}: this item type is not supported yet` });
+      continue;
+    }
+    try {
+      results.push({ type: item.type, ok: true, created: await handler2.create(item, { gh: p.gh, calendar: p.calendar, external: p.external, summarise: p.summarise, repo: p.repo, owner: p.owner, tz: p.tz, dump: d.issue, key }) });
+    } catch (e) {
+      const note2 = e instanceof ItemError ? e.note : "";
+      const reason = `failed while ${STEPS.create}: ${failureMessage(e instanceof ItemError ? e.cause : e)}`;
+      results.push({ type: item.type, ok: false, title, reason, note: note2 });
+    }
+  }
+  return { results, questions: nothingFound(items.length, questions.length, created.length) ? [NOTHING_FOUND] : questions };
+}
+
+// src/secrets.ts
+var NAMES = ["CLAUDE_CODE_OAUTH_TOKEN", "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_REFRESH_TOKEN"];
+function maskSecrets(env, setSecret2) {
+  for (const n of NAMES) if (env[n]) setSecret2(env[n]);
+  if (env.GH_READ_TOKENS) {
+    setSecret2(env.GH_READ_TOKENS);
+    try {
+      for (const t of Object.values(JSON.parse(env.GH_READ_TOKENS))) {
+        if (typeof t === "string" && t) setSecret2(t);
+      }
+    } catch {
+    }
+  }
 }
 
 // src/main.ts
 var MODES = ["process", "summary", "doctor"];
+function summaryDeps(env) {
+  const { owner, tz } = loadConfig(env);
+  let bin;
+  let reader;
+  return {
+    gh: createGh(env),
+    reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
+    owner,
+    tz,
+    now: () => /* @__PURE__ */ new Date(),
+    claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? "", bin: bin ??= installClaude(env.GITHUB_ACTION_PATH ?? ".") }),
+    log: info
+  };
+}
 var handlers = {
   process: (env) => {
     const issue2 = eventIssue(env);
@@ -33263,6 +33307,7 @@ var handlers = {
       gh,
       calendar: createCalendar(env),
       external: () => reader ??= createReader(env),
+      summarise: (from, to, marker) => onDemandSummary(summaryDeps(env), from, to, marker),
       repo: env.GITHUB_REPOSITORY ?? "",
       issue: issue2,
       owner,
@@ -33272,19 +33317,13 @@ var handlers = {
       log: info
     });
   },
-  summary: (env) => {
-    const { owner, tz } = loadConfig(env);
-    let bin;
-    let reader;
-    return weeklySummary({
-      gh: createGh(env),
-      reader: { readExternalActivity: (r, p) => (reader ??= createReader(env)).readExternalActivity(r, p) },
-      owner,
-      tz,
-      now: () => /* @__PURE__ */ new Date(),
-      claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? "", bin: bin ??= installClaude(env.GITHUB_ACTION_PATH ?? ".") }),
-      log: info
-    });
+  summary: async (env) => {
+    const { from, to } = eventDates(env);
+    if (!from && !to) return weeklySummary(summaryDeps(env));
+    const problem = periodProblem(from, to);
+    if (problem) throw new Error(`summary: ${problem} Give from and to as YYYY-MM-DD.`);
+    const { issue: issue2, reused } = await onDemandSummary(summaryDeps(env), from, to);
+    info(`${reused ? "Existing summary" : "Summary"}: ${issue2.url}`);
   },
   doctor: (env) => runDoctor(createGh(env), info, [
     ...baseChecks,
