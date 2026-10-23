@@ -76,7 +76,8 @@ One user: Siam (GitHub `masnun-siam`). Nobody else can create dumps or see the d
 - **Concurrency.** Runs are serialised per issue: concurrency group `todoman-<issue number>`, never cancelling a run in progress. GitHub keeps at most one pending run per group, so a newer pending run replaces an older one; this is harmless because each run reads the live issue and its whole thread and FR-8 holds. Different dumps process in parallel. Tracking dedupe (FR-5) is re-checked just before creation, so two simultaneous dumps naming the same new external issue can at worst create two tracking issues — accepted; later notes go to the oldest.
 - **Edits.** Editing a dump's title or body after processing does nothing; replying only does something on an open dump that is `needs-info`, `failed` or stuck in `todoman:processing`. A reply on a closed dump is ignored, which is why its result comment says to open a new dump.
 - **Loops.** Todoman's own writes use the workflow's built-in token, which GitHub does not let trigger further workflow runs, so items, result comments and summary issues never re-trigger processing.
-- **Empty or meaningless dump.** A dump with no actionable content ("asdf") goes to `needs-info` with "I couldn't find a task, meeting or reference in this. Reply here to answer."
+- **Empty or meaningless dump.** A dump with no actionable content ("asdf") goes to `needs-info` with "I couldn't find a task, meeting or reference in this. Reply here to answer." This applies only to a run that did not start from `needs-info`: when Siam answers a question and nothing is left to create or ask (for example "skip it" when nothing was created before), the dump ends `processed` and is closed.
+- **Identical items in one dump (accepted limitation).** On reprocess, items of the same type with the same normalised title count as one: Claude is told not to return what is in `alreadyCreated`, and code matching (Data) skips a returned item that matches one already created. So if a dump holds two identical tasks and only the first is created before a failure, the retry does not create the second. Rare (it needs two identical items and a failure between them) and accepted; Siam can open a new dump for it. (#52)
 - **Limits.** Dumps over 10,000 characters or yielding more than 10 items create nothing and go to `needs-info` asking to split. Summaries over 31 days are refused with a comment. A summary period with more than 300 issues lists the 300 most recently updated and says how many were left out.
 - **Relative dates.** Resolved in `TODOMAN_TZ` against the timestamp of the message that states them (the dump's `created_at`, or the reply's), never the time of a later run; the thread is passed to Claude with each message's timestamp. So "tomorrow 9am" written on Wednesday still means Thursday when a retry runs on Thursday: a weekday means its nearest future occurrence (today if the time is still ahead). A meeting time in the past or more than 365 days ahead goes to `needs-info`.
 - **Unknown or unnamed attendee.** See FR-4a: skipped, listed in the meeting issue and result comment as "invite manually or add to people.yml".
@@ -163,7 +164,7 @@ A final step that runs on failure or cancellation sets `failed` on the dump (FR-
 }
 ```
 
-Claude returns no keys; Todoman assigns them (Data). Validation by Todoman before any write: 1–10 items; titles ≤ 120 chars; `due` a valid date; `start` with an offset, in the future and within 365 days; `durationMinutes` 5–480; `attendees` are names only and pass FR-4a; `agenda` plain text ≤ 500 chars with URLs removed; no two meetings with the same start; `labels` only existing non-Todoman labels (others dropped); `ref` matches `owner/repo#n` on `github.com` and appears literally in the dump or Siam's comments; summary span ≤ 31 days. A failing item becomes a question (FR-7).
+Claude returns no keys; Todoman assigns them (Data). Validation by Todoman before any write: 1–10 items; titles ≤ 120 chars; `due` a valid date; `start` with an offset, in the future and within 365 days; `durationMinutes` 5–480; `attendees` are names only and pass FR-4a; `agenda` plain text ≤ 500 chars with URLs removed; no two meetings with the same start; `labels` only existing non-Todoman labels (others dropped); `ref` matches `owner/repo#n` on `github.com` and appears literally in the dump or Siam's comments; summary span ≤ 31 days and a start no later than today in `TODOMAN_TZ`. A failing item becomes a question (FR-7).
 
 ### Backend
 
@@ -268,6 +269,7 @@ None.
 
 ## Change log
 
+- 2026-10-24 — Epic #1 QA follow-ups: a reply that leaves nothing to create ends `processed` (#50); a summary period that has not started is a question (#54); identical items in one dump are an accepted limitation on reprocess (#52).
 - 2026-10-24 — #14: the meeting issue's item marker records the start (`start=`), so meeting matching on reprocess needs no body parsing. The event is created first and its description links the meeting issue once it exists.
 - 2026-10-21 — First draft.
 - 2026-10-21 — Round 3: approved by all six lenses. Minor fixes: sequence diagram shows code-assigned keys; tracking-note marker carries `ref`; FR-8 re-run gate uses the last comment read; `workflow_dispatch` summary without dates is weekly.
