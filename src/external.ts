@@ -151,12 +151,18 @@ function octokitClient(token: string): ExternalGh {
   };
 }
 
-/** Doctor's check that a read token works and can see its owner; any failure is false, never an error body. */
-export async function canReadOwner(token: string, owner: string): Promise<boolean> {
+/** Doctor's check that a read token can read at least one repo of `owner`; any failure is false, never an error body. */
+export async function canReadOwner(token: string, owner: string, ownersFor: (token: string) => Promise<string[]> = repoOwners): Promise<boolean> {
   try {
-    await github.getOctokit(token).rest.users.getByUsername({ username: owner });
-    return true;
+    return (await ownersFor(token)).some((o) => o.toLowerCase() === owner.toLowerCase());
   } catch {
     return false;
   }
+}
+
+/** Owners of the repos `token` can read (GET /user/repos); a public endpoint would pass any valid token. */
+async function repoOwners(token: string): Promise<string[]> {
+  const octokit = github.getOctokit(token);
+  // ponytail: reads every page; stop at the first match if a classic token with thousands of repos makes doctor slow
+  return octokit.paginate(octokit.rest.repos.listForAuthenticatedUser, { per_page: 100 }, (r) => r.data.map((repo) => repo.owner.login));
 }
