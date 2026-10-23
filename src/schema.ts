@@ -35,3 +35,17 @@ export const PARSER_SCHEMA = {
     },
   },
 } as const;
+
+const note = { type: 'object', additionalProperties: false, required: ['issue', 'note'], properties: { issue: { type: 'integer' }, note: str } };
+
+/** JSON schema given to Claude for a summary (FR-10): condensed text per issue; code renders every section and link. */
+export const SUMMARY_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['done', 'meetings', 'tracked'],
+  properties: {
+    done: { type: 'array', items: note },
+    meetings: { type: 'array', items: note },
+    tracked: { type: 'array', items: note },
+  },
+} as const;

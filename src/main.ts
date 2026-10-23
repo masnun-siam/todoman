@@ -8,6 +8,7 @@ import { createGh } from './github.js';
 import { createCalendar } from './google.js';
 import { failInterruptedRun, processDump } from './process.js';
 import { maskSecrets } from './secrets.js';
+import { weeklySummary } from './summary.js';
 
 export const MODES = ['process', 'summary', 'doctor'] as const;
 export type Mode = (typeof MODES)[number];
@@ -34,7 +35,19 @@ const handlers: Record<Mode, (env: Env) => Promise<void> | void> = {
       log: core.info,
     });
   },
-  summary: () => core.info('mode: summary'),
+  summary: (env) => {
+    const { owner, tz } = loadConfig(env);
+    let bin: string | undefined; // installed only when the summary has text to condense
+    return weeklySummary({
+      gh: createGh(env),
+      reader: createReader(env),
+      owner,
+      tz,
+      now: () => new Date(),
+      claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? '', bin: (bin ??= installClaude(env.GITHUB_ACTION_PATH ?? '.')) }),
+      log: core.info,
+    });
+  },
   doctor: (env) => runDoctor(createGh(env), core.info),
 };
 

@@ -27738,6 +27738,13 @@ var PARSE_SYSTEM = [
   "tracking: ref as owner/repo#n for a GitHub issue or pull request written in the text, note.",
   "summary: from and to dates (YYYY-MM-DD) for a worklog or summary request."
 ].join("\n");
+var SUMMARY_SYSTEM = [
+  "You condense a week of personal work for a summary. The input is JSON: period, timezone, done [{issue, title, comments}] (tasks closed in the period), meetings [{issue, title, summaries}] (meeting summaries pasted as comments), tracked [{issue, ref, title, state, notes, comments, mergedPrs}] (items in other repos with activity in the period).",
+  "Return done, meetings and tracked as lists of {issue, note}, using the issue numbers given. Each note is one or two plain sentences, no markdown, no links, no @mentions.",
+  "done: what was done, only when the comments add something beyond the title; otherwise leave the issue out.",
+  "meetings: the decisions and action items from the summaries, condensed.",
+  "tracked: what happened in the period, from the comments, notes and merged pull requests."
+].join("\n");
 
 // src/claude.ts
 var ClaudeError = class extends Error {
@@ -32395,6 +32402,7 @@ var REF = `${REPO2}#\\d+`;
 var TS = "[\\w:.+-]+";
 var itemMarker = (m) => `<!-- todoman:item repo=${m.repo} dump=${m.dump} key=${m.key}${m.ref ? ` ref=${m.ref}` : ""}${m.start ? ` start=${m.start}` : ""} -->`;
 var refMarker = (ref) => `<!-- todoman:ref ${ref} -->`;
+var summaryMarker = (m) => `<!-- todoman:summary kind=${m.kind} from=${m.from} to=${m.to} -->`;
 var readMarker = (id) => `<!-- todoman:read id=${id} -->`;
 var botBodies = (items) => items.filter((i) => i.author === BOT).map((i) => i.body);
 function parseItemMarkers(items) {
@@ -32406,6 +32414,10 @@ function parseItemMarkers(items) {
 function parseRefMarkers(items) {
   const re = new RegExp(`<!-- todoman:ref (${REF}) -->`, "g");
   return botBodies(items).flatMap((b) => [...b.matchAll(re)].map((m) => m[1]));
+}
+function parseSummaryMarkers(items) {
+  const re = new RegExp(`<!-- todoman:summary kind=(weekly|on-demand) from=(${TS}) to=(${TS}) -->`, "g");
+  return botBodies(items).flatMap((b) => [...b.matchAll(re)].map(([, kind, from, to]) => ({ kind, from, to })));
 }
 function lastRead(items) {
   return Math.max(0, ...botBodies(items).flatMap((b) => [...b.matchAll(/<!-- todoman:read id=(\d+) -->/g)].map((m) => Number(m[1]))));
@@ -32613,13 +32625,13 @@ async function existing(ctx, ref) {
   const open2 = await ctx.gh.openIssues("tracking");
   return open2.filter((i) => parseRefMarkers([{ author: i.author, body: i.body }]).some((r) => sameRef(r, ref))).sort((a, b) => a.number - b.number)[0];
 }
-async function addNote(ctx, issue2, ref, note) {
+async function addNote(ctx, issue2, ref, note2) {
   const posted = parseItemMarkers(await ctx.gh.listComments(issue2.number)).some(
     (m) => m.repo === ctx.repo && m.dump === ctx.dump.number && m.ref !== void 0 && sameRef(m.ref, ref)
   );
   if (!posted) {
     const marker = itemMarker({ repo: ctx.repo, dump: ctx.dump.number, key: ctx.key, ref });
-    await ctx.gh.comment(issue2.number, [note, `Source dump: ${ctx.dump.url}`, marker].join("\n\n"));
+    await ctx.gh.comment(issue2.number, [note2, `Source dump: ${ctx.dump.url}`, marker].join("\n\n"));
   }
   return { title: issue2.title, url: issue2.url, details: [`added note to existing #${issue2.number}`] };
 }
@@ -32763,6 +32775,17 @@ var PARSER_SCHEMA = {
     }
   }
 };
+var note = { type: "object", additionalProperties: false, required: ["issue", "note"], properties: { issue: { type: "integer" }, note: str } };
+var SUMMARY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["done", "meetings", "tracked"],
+  properties: {
+    done: { type: "array", items: note },
+    meetings: { type: "array", items: note },
+    tracked: { type: "array", items: note }
+  }
+};
 
 // src/validate.ts
 var TODOMAN_LABELS = new Set(LABELS.map((l) => l.name));
@@ -32810,9 +32833,9 @@ function tracking(raw, ctx) {
   const lead = "(?<![\\w.-])";
   const named = new RegExp(`${lead}${esc(path)}#${n}(?!\\d)|${lead}github\\.com/${esc(path)}/(issues|pull)/${n}(?!\\d)`, "i").test(ctx.text);
   if (!named) return `Which issue or pull request is ${ref}? It is not mentioned in your text.`;
-  const note = text(raw.note);
-  if (!note) return `What should the note on ${ref} say?`;
-  return { type: "tracking", ref, note };
+  const note2 = text(raw.note);
+  if (!note2) return `What should the note on ${ref} say?`;
+  return { type: "tracking", ref, note: note2 };
 }
 function summary2(raw) {
   const { from, to } = raw;
@@ -32934,6 +32957,181 @@ function maskSecrets(env, setSecret2) {
   }
 }
 
+// src/collect.ts
+var MAX_ISSUES = 300;
+var NEXT_MS = 7 * 864e5;
+var TODOMAN_LABELS3 = LABELS.map((l) => l.name);
+var isDump = (i, owner) => i.author === owner && (!i.labels.some((l) => TODOMAN_LABELS3.includes(l)) || i.labels.some((l) => STATE_LABELS.includes(l)));
+var counts = (i, owner) => !isDump(i, owner) && !i.labels.includes("summary");
+var startOf = (i) => parseItemMarkers([i]).find((m) => m.start)?.start;
+async function collect(gh, reader, owner, p) {
+  const [updated, openTasks, meetings, openTracking] = await Promise.all([
+    gh.issuesUpdatedSince(p.from),
+    gh.issuesLabelled("task", "open"),
+    gh.issuesLabelled("meeting", "all"),
+    gh.issuesLabelled("tracking", "open")
+  ]);
+  const allComments = /* @__PURE__ */ new Map();
+  const commentsOf = async (n) => {
+    if (!allComments.has(n)) allComments.set(n, await gh.listComments(n));
+    return allComments.get(n) ?? [];
+  };
+  const active2 = [];
+  for (const i of updated.filter((x) => counts(x, owner) && Date.parse(x.createdAt) < Date.parse(p.to))) {
+    const touched = [i.createdAt, i.updatedAt, i.closedAt].some((t) => t && inPeriod(t, p));
+    if (touched || (await commentsOf(i.number)).some((c) => inPeriod(c.createdAt, p))) active2.push(i);
+  }
+  const next = { from: p.to, to: new Date(Date.parse(p.to) + NEXT_MS).toISOString() };
+  const meetingsKept = meetings.filter((i) => {
+    const start = startOf(i);
+    return start !== void 0 && (inPeriod(start, p) || i.state === "open" && inPeriod(start, next));
+  });
+  const byNumber = /* @__PURE__ */ new Map();
+  for (const i of [...active2, ...openTasks, ...meetingsKept, ...openTracking]) if (counts(i, owner)) byNumber.set(i.number, i);
+  const all = [...byNumber.values()].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+  const kept = all.slice(0, MAX_ISSUES);
+  const issues = [];
+  const tracked = [];
+  for (const i of kept) {
+    const start = startOf(i);
+    const meetingInPeriod = i.labels.includes("meeting") && start !== void 0 && inPeriod(start, p);
+    const untouched = Date.parse(i.updatedAt) < Date.parse(p.from);
+    const comments = meetingInPeriod ? await commentsOf(i.number) : untouched ? [] : (await commentsOf(i.number)).filter((c) => inPeriod(c.createdAt, p));
+    issues.push({ ...i, comments, ...start ? { start } : {} });
+    if (!i.labels.includes("tracking")) continue;
+    const ref = parseRefMarkers([i])[0];
+    const r = ref ? parseRef(ref) : null;
+    if (r) tracked.push({ issue: i.number, ref, activity: await reader.readExternalActivity(r, p) });
+  }
+  return { issues, leftOut: all.length - kept.length, tracked };
+}
+
+// src/periods.ts
+var WEEK_MS = 7 * 864e5;
+async function weeklyPeriod(gh, now) {
+  const summaries2 = await gh.issuesLabelled("summary", "all");
+  const tos = parseSummaryMarkers(summaries2).filter((m) => m.kind === "weekly" && !Number.isNaN(Date.parse(m.to))).map((m) => m.to);
+  const last = tos.reduce((a, b) => a && Date.parse(a) >= Date.parse(b) ? a : b, void 0);
+  return { from: last ?? new Date(now.getTime() - WEEK_MS).toISOString(), to: now.toISOString() };
+}
+
+// src/summaryRender.ts
+var NEXT_MS2 = 7 * 864e5;
+var NOTE_MAX = 600;
+var EMPTY = "Nothing this week.";
+var NO_SUMMARY = "no summary added";
+var NO_NOTES = { done: [], meetings: [], tracked: [] };
+var dueOf = (i) => /^Due: (\d{4}-\d{2}-\d{2})$/m.exec(i.body)?.[1];
+var has = (i, label) => i.labels.includes(label);
+var texts = (i, from = () => true) => i.comments.filter((c) => from(c.author)).map((c) => c.body.replace(/<!--[\s\S]*?-->/g, "").trim()).filter(Boolean);
+var summaries = (i) => texts(i, (a) => a !== BOT);
+var active = (t, p) => !t.activity.access || t.activity.comments.length > 0 || t.activity.mergedPrs.length > 0 || t.activity.closedAt !== void 0 && inPeriod(t.activity.closedAt, p);
+function sections(c, p, tz) {
+  const today = localDate(new Date(p.to), tz);
+  const week = addDays(today, 7);
+  const next = { from: p.to, to: new Date(Date.parse(p.to) + NEXT_MS2).toISOString() };
+  const tasks = c.issues.filter((i) => has(i, "task"));
+  const open2 = tasks.filter((i) => i.state === "open");
+  const overdue = (i) => (dueOf(i) ?? today) < today;
+  const byNumber = new Map(c.issues.map((i) => [i.number, i]));
+  const when = (i) => has(i, "meeting") ? i.start ?? "" : `${dueOf(i)}T00:00`;
+  return {
+    done: tasks.filter((i) => i.closedAt !== null && inPeriod(i.closedAt, p)),
+    open: [...open2.filter(overdue).sort((a, b) => (dueOf(a) ?? "").localeCompare(dueOf(b) ?? "")), ...open2.filter((i) => !overdue(i))],
+    meetings: c.issues.filter((i) => has(i, "meeting") && i.start !== void 0 && inPeriod(i.start, p)).sort((a, b) => Date.parse(a.start ?? "") - Date.parse(b.start ?? "")),
+    tracked: c.tracked.filter((t) => active(t, p)).flatMap((t) => byNumber.has(t.issue) ? [{ issue: byNumber.get(t.issue), t }] : []),
+    next: [
+      ...open2.filter((i) => {
+        const d = dueOf(i);
+        return d !== void 0 && d >= today && d < week;
+      }),
+      ...c.issues.filter((i) => has(i, "meeting") && i.state === "open" && i.start !== void 0 && inPeriod(i.start, next))
+    ].sort((a, b) => when(a).localeCompare(when(b))),
+    today,
+    tz
+  };
+}
+var needsClaude = (s) => s.done.some((i) => texts(i).length) || s.meetings.some((i) => summaries(i).length) || s.tracked.some(({ t }) => t.activity.access);
+function summaryInput(s, p) {
+  return JSON.stringify({
+    period: p,
+    timezone: s.tz,
+    done: s.done.map((i) => ({ issue: i.number, title: i.title, comments: texts(i) })),
+    meetings: s.meetings.filter((i) => summaries(i).length).map((i) => ({ issue: i.number, title: i.title, summaries: summaries(i) })),
+    tracked: s.tracked.flatMap(
+      ({ issue: issue2, t }) => t.activity.access ? [{ issue: issue2.number, ref: t.ref, title: t.activity.title, state: t.activity.state, notes: texts(issue2), comments: t.activity.comments.map((c) => ({ author: c.author, text: c.body })), mergedPrs: t.activity.mergedPrs.map((pr) => pr.title) }] : []
+    )
+  });
+}
+function toNotes(v) {
+  const list = (x) => (Array.isArray(x) ? x : []).flatMap(
+    (n) => n && Number.isInteger(n.issue) && typeof n.note === "string" && n.note.trim() ? [{ issue: n.issue, note: sanitize(n.note).replace(/\s+/g, " ").trim().slice(0, NOTE_MAX) }] : []
+  );
+  const o = v ?? {};
+  return { done: list(o.done), meetings: list(o.meetings), tracked: list(o.tracked) };
+}
+var link = (i) => `[${sanitize(i.title).replace(/[[\]]/g, "\\$&")}](${i.url})`;
+var noteFor = (notes, i) => notes.find((n) => n.issue === i.number)?.note;
+var section = (title, lines) => `## ${title}
+
+${lines.length ? lines.join("\n") : EMPTY}`;
+function trackedLine({ issue: issue2, t }, notes) {
+  const a = t.activity;
+  if (!a.access) return `- ${link(issue2)} \u2014 no access`;
+  const facts = [
+    a.state,
+    a.comments.length ? `${a.comments.length} new comment${a.comments.length === 1 ? "" : "s"}` : "",
+    ...a.mergedPrs.map((pr) => `merged [${pr.title.replace(/[[\]]/g, "\\$&")}](${pr.url})`),
+    noteFor(notes, issue2) ?? ""
+  ].filter(Boolean);
+  return `- ${link(issue2)} \u2014 ${facts.join("; ")}`;
+}
+function renderSummary(s, notes, leftOut, marker) {
+  const at = (iso) => `${localDate(new Date(iso), s.tz)} ${localTime(new Date(iso), s.tz)}`;
+  const overdue = s.open.filter((i) => (dueOf(i) ?? s.today) < s.today).length;
+  const headline = `**Done ${s.done.length} \xB7 Open ${s.open.length} (${overdue} overdue) \xB7 Meetings ${s.meetings.length} \xB7 Tracked ${s.tracked.length} \xB7 Next 7 days ${s.next.length}**`;
+  const parts = [headline];
+  if (leftOut) parts.push(`${leftOut} more issue${leftOut === 1 ? " was" : "s were"} left out: only the 300 most recently updated are listed.`);
+  parts.push(
+    section("Done", s.done.map((i) => `- ${link(i)}${noteFor(notes.done, i) ? ` \u2014 ${noteFor(notes.done, i)}` : ""}`)),
+    section("Open", s.open.map((i) => {
+      const due = dueOf(i);
+      return `- ${link(i)}${due ? ` \u2014 due ${due}${due < s.today ? " (overdue)" : ""}` : ""}`;
+    })),
+    section("Meetings", s.meetings.map((i) => `- ${at(i.start ?? "")}: ${link(i)} \u2014 ${summaries(i).length ? noteFor(notes.meetings, i) ?? "summary added" : NO_SUMMARY}`)),
+    section("Tracked", s.tracked.map((x) => trackedLine(x, notes.tracked))),
+    section("Next 7 days", s.next.map((i) => `- ${i.start ? at(i.start) : `due ${dueOf(i)}`}: ${link(i)}`)),
+    marker
+  );
+  return parts.join("\n\n");
+}
+
+// src/summary.ts
+var DAY_MS = 864e5;
+var summaryTitle = (kind, p, tz) => `${kind}: ${localDate(new Date(p.from), tz)} \u2013 ${localDate(new Date(p.to), tz)}`;
+var isNotes = (v) => typeof v === "object" && v !== null && ["done", "meetings", "tracked"].every((k) => Array.isArray(v[k]));
+async function weeklySummary(d) {
+  const now = d.now();
+  const recent = (await d.gh.issuesLabelled("summary", "all")).find(
+    (i) => now.getTime() - Date.parse(i.createdAt) < DAY_MS && parseSummaryMarkers([i]).some((m) => m.kind === "weekly")
+  );
+  if (recent) {
+    d.log(`Weekly summary already exists: ${recent.url}`);
+    return;
+  }
+  const p = await weeklyPeriod(d.gh, now);
+  const c = await collect(d.gh, d.reader, d.owner, p);
+  const s = sections(c, p, d.tz);
+  const notes = needsClaude(s) ? toNotes(await d.claude({ model: MODELS.summary, system: SUMMARY_SYSTEM, schema: SUMMARY_SCHEMA, input: summaryInput(s, p), validate: isNotes })) : NO_NOTES;
+  const issue2 = await d.gh.createIssue({
+    title: summaryTitle("Weekly summary", p, d.tz),
+    body: renderSummary(s, notes, c.leftOut, summaryMarker({ kind: "weekly", ...p })),
+    labels: ["summary"],
+    assignees: [d.owner]
+  });
+  d.log(`Weekly summary: ${issue2.url}`);
+}
+
 // src/main.ts
 var MODES = ["process", "summary", "doctor"];
 var handlers = {
@@ -32958,7 +33156,19 @@ var handlers = {
       log: info
     });
   },
-  summary: () => info("mode: summary"),
+  summary: (env) => {
+    const { owner, tz } = loadConfig(env);
+    let bin;
+    return weeklySummary({
+      gh: createGh(env),
+      reader: createReader(env),
+      owner,
+      tz,
+      now: () => /* @__PURE__ */ new Date(),
+      claude: (r) => runClaude(r, { token: env.CLAUDE_CODE_OAUTH_TOKEN ?? "", bin: bin ??= installClaude(env.GITHUB_ACTION_PATH ?? ".") }),
+      log: info
+    });
+  },
   doctor: (env) => runDoctor(createGh(env), info)
 };
 async function run(mode, env = process.env) {
